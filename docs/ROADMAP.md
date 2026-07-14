@@ -24,7 +24,11 @@ The demo becomes real: a position on screen, analyzed locally.
       lite engine (8 threads) reached depth 23 in 5s MultiPV 3, same-origin
       /api/health OK. Production deploy pending `wrangler login`.
 - [x] *CI: GitHub Actions running ruff+pytest (pipeline) and lint+tsc+build (web)
-- [ ] Board UI with `react-chessboard`: set up pieces, paste FEN, play moves
+- [x] Board UI (`react-chessboard` v5 + chess.js): play legal moves, paste FEN
+      with validation, undo/reset/flip, auto-analysis on position change
+      (debounced, stale-result guarded), White-centric eval display.
+      Deferred: piece-editor mode (needed anyway for image-to-FEN confirm),
+      promotion picker (auto-queen for now)
 - [x] *Stockfish WASM (`stockfish` npm, SF 18 lite ~7MB; full NNUE build is
       108MB > the 25MiB asset limit, not shipped): typed client (init,
       `analyze(fen, {multipv})`, `gradeMove(fen, move)` via searchmoves),

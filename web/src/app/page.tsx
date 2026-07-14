@@ -1,153 +1,154 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { Chess } from "chess.js";
+import { Chessboard, type PieceDropHandlerArgs } from "react-chessboard";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { EngineClient } from "@/lib/engine/client";
-import type { EngineLine } from "@/lib/engine/types";
+import { Card, CardContent } from "@/components/ui/card";
+import { AnalysisPanel } from "@/components/analysis-panel";
+import { useEngineAnalysis } from "@/lib/engine/use-engine";
 
 const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
-function formatScore(line: EngineLine): string {
-  if (line.mate !== undefined) return `#${line.mate}`;
-  if (line.cp !== undefined) return (line.cp / 100).toFixed(2);
-  return "?";
+function gameOverText(game: Chess): string | undefined {
+  if (game.isCheckmate()) {
+    return `Checkmate — ${game.turn() === "w" ? "Black" : "White"} wins.`;
+  }
+  if (game.isStalemate()) return "Stalemate.";
+  if (game.isInsufficientMaterial()) return "Draw — insufficient material.";
+  if (game.isThreefoldRepetition()) return "Draw — threefold repetition.";
+  if (game.isDraw()) return "Draw.";
+  return undefined;
 }
 
 export default function Home() {
-  const engineRef = useRef<EngineClient | null>(null);
-  const [status, setStatus] = useState<"loading" | "ready" | "analyzing" | "error">("loading");
-  const [error, setError] = useState<string>("");
-  const [isolated, setIsolated] = useState<boolean | null>(null);
-  const [threads, setThreads] = useState(0);
-  const [variant, setVariant] = useState("");
-  const [lines, setLines] = useState<EngineLine[]>([]);
-  const [health, setHealth] = useState<string>("checking…");
+  // chess.js owns the rules; the FEN state drives board + analysis.
+  const gameRef = useRef(new Chess(START_FEN));
+  const [fen, setFen] = useState(START_FEN);
+  const [orientation, setOrientation] = useState<"white" | "black">("white");
+  const [fenInput, setFenInput] = useState("");
+  const [fenError, setFenError] = useState("");
 
-  useEffect(() => {
-    // Strict mode mounts effects twice in dev: the cancelled flag keeps the
-    // disposed first engine's rejections from touching the live UI state.
-    let cancelled = false;
-    const engine = new EngineClient();
-    engineRef.current = engine;
-    engine
-      .init()
-      .then(() => {
-        if (cancelled) return;
-        setIsolated(typeof crossOriginIsolated !== "undefined" && crossOriginIsolated);
-        setThreads(engine.info.threads);
-        setVariant(engine.info.variant);
-        setStatus("ready");
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
-        setStatus("error");
-        setError(e instanceof Error ? e.message : String(e));
-      });
+  const { engine, analysis } = useEngineAnalysis(fen, { multipv: 3, movetimeMs: 5000 });
 
-    fetch("/api/health")
-      .then((r) => r.json())
-      .then((j: { ok?: boolean }) => {
-        if (!cancelled) setHealth(j.ok ? "ok" : "unexpected response");
-      })
-      .catch(() => {
-        if (!cancelled) setHealth("unreachable");
-      });
+  const sideToMove = useMemo(() => (fen.split(" ")[1] === "b" ? "b" : "w"), [fen]);
+  // Derived from FEN alone (render must not read the ref). Note: threefold
+  // repetition needs move history, so it isn't detected here — fine for now.
+  const overText = useMemo(() => gameOverText(new Chess(fen)), [fen]);
 
-    return () => {
-      cancelled = true;
-      engine.dispose();
-    };
-  }, []);
-
-  async function analyze() {
-    const engine = engineRef.current;
-    if (!engine) return;
-    setStatus("analyzing");
-    setLines([]);
+  function onPieceDrop({ sourceSquare, targetSquare }: PieceDropHandlerArgs): boolean {
+    if (!targetSquare) return false;
     try {
-      const result = await engine.analyze(START_FEN, {
-        multipv: 3,
-        movetimeMs: 5000,
-        onLines: setLines,
-      });
-      setLines(result.lines);
-      setStatus("ready");
-    } catch (e: unknown) {
-      setStatus("error");
-      setError(e instanceof Error ? e.message : String(e));
+      // TODO(mode-2): grade the played move against the pre-move analysis.
+      // TODO(ui): promotion picker; auto-queen for now.
+      gameRef.current.move({ from: sourceSquare, to: targetSquare, promotion: "q" });
+      setFen(gameRef.current.fen());
+      setFenError("");
+      return true;
+    } catch {
+      return false; // illegal — board reverts
     }
   }
 
+  function loadFen() {
+    const candidate = fenInput.trim();
+    if (!candidate) return;
+    try {
+      gameRef.current = new Chess(candidate);
+      setFen(gameRef.current.fen());
+      setFenInput("");
+      setFenError("");
+    } catch (e: unknown) {
+      setFenError(e instanceof Error ? e.message : "Invalid FEN");
+    }
+  }
+
+  function reset() {
+    gameRef.current = new Chess(START_FEN);
+    setFen(START_FEN);
+    setFenError("");
+  }
+
+  function undo() {
+    gameRef.current.undo();
+    setFen(gameRef.current.fen());
+  }
+
   return (
-    <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 p-8">
-      <h1 className="text-2xl font-semibold">Chess Explanation Engine — Phase 1 proof</h1>
+    <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 p-6">
+      <h1 className="text-2xl font-semibold">Chess Explanation Engine</h1>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Environment</CardTitle>
-          <CardDescription>
-            Threading requires cross-origin isolation (COOP/COEP headers).
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-1 text-sm">
-          <p>
-            crossOriginIsolated:{" "}
-            <span className={isolated ? "text-green-600" : "text-red-600"}>
-              {isolated === null ? "…" : String(isolated)}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,480px)_1fr]">
+        <div className="flex flex-col gap-4">
+          <Chessboard
+            options={{
+              position: fen,
+              onPieceDrop,
+              boardOrientation: orientation,
+              id: "main-board",
+            }}
+          />
+
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={reset}>
+              Reset
+            </Button>
+            <Button variant="outline" size="sm" onClick={undo}>
+              Undo
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setOrientation((o) => (o === "white" ? "black" : "white"))}
+            >
+              Flip
+            </Button>
+            <span className="ml-auto self-center text-sm text-muted-foreground">
+              {overText ?? `${sideToMove === "w" ? "White" : "Black"} to move`}
             </span>
-          </p>
-          <p>
-            Engine: {variant} · {threads} thread{threads === 1 ? "" : "s"} · status: {status}
-            {status === "error" ? ` (${error})` : ""}
-          </p>
-          <p>/api/health (same-origin Worker): {health}</p>
-        </CardContent>
-      </Card>
+          </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Top 3 moves from the start position</CardTitle>
-          <CardDescription>MultiPV analysis, 5s fixed movetime, progressive.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Button onClick={analyze} disabled={status !== "ready"}>
-            {status === "analyzing" ? "Analyzing…" : "Analyze"}
-          </Button>
-          {lines.length > 0 && (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-muted-foreground">
-                  <th className="py-1 pr-4">#</th>
-                  <th className="py-1 pr-4">Move</th>
-                  <th className="py-1 pr-4">Eval</th>
-                  <th className="py-1 pr-4">Depth</th>
-                  <th className="py-1">Line</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lines.map((l) => (
-                  <tr key={l.multipv} className="border-t">
-                    <td className="py-1 pr-4">{l.multipv}</td>
-                    <td className="py-1 pr-4 font-mono">{l.pv[0]}</td>
-                    <td className="py-1 pr-4 font-mono">{formatScore(l)}</td>
-                    <td className="py-1 pr-4">{l.depth}</td>
-                    <td className="py-1 font-mono text-xs text-muted-foreground">
-                      {l.pv.slice(0, 8).join(" ")}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </CardContent>
-      </Card>
+          <div className="flex gap-2">
+            <input
+              className="min-w-0 flex-1 rounded-md border bg-transparent px-3 py-1.5 font-mono text-xs"
+              placeholder="Paste a FEN…"
+              value={fenInput}
+              onChange={(e) => setFenInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") loadFen();
+              }}
+            />
+            <Button size="sm" onClick={loadFen}>
+              Load
+            </Button>
+          </div>
+          {fenError && <p className="text-xs text-red-600">{fenError}</p>}
+        </div>
+
+        <div className="flex flex-col gap-4">
+          <AnalysisPanel
+            lines={analysis.lines}
+            sideToMove={sideToMove}
+            analyzing={analysis.analyzing}
+            depth={analysis.depth}
+            gameOverText={overText}
+          />
+
+          <Card>
+            <CardContent className="pt-4 text-xs text-muted-foreground">
+              {engine.status === "loading" && "Engine loading…"}
+              {engine.status === "error" && `Engine error: ${engine.error}`}
+              {engine.status === "ready" && engine.info && (
+                <>
+                  {engine.info.variant} · {engine.info.threads} thread
+                  {engine.info.threads === 1 ? "" : "s"} ·{" "}
+                  {engine.isolated ? "cross-origin isolated" : "NOT isolated (fallback)"}
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </main>
   );
 }
