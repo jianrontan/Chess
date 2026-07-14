@@ -26,8 +26,12 @@ export interface AnalyzeOptions {
 export interface AnalyzeResult {
   /** Final lines, index 0 = best. */
   lines: EngineLine[];
-  /** Engine's bestmove answer. */
-  bestMove: string;
+  /**
+   * Engine's bestmove answer. `null` for terminal positions (checkmate,
+   * stalemate) or a searchmoves restriction with no legal move — callers
+   * must handle this before building any downstream payload.
+   */
+  bestMove: string | null;
   /** Deepest completed depth. */
   depth: number;
 }

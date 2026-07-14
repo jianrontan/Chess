@@ -22,3 +22,10 @@ via `pnpm --filter web <script>` or from this directory.
   never in NEXT_PUBLIC_* vars.
 - No server containers, no server-side chess compute. Keep the Worker stateless.
 - Chessboard UI: `react-chessboard`. Positions are passed around as FEN strings.
+- **UCI eval perspective:** engine `cp`/`mate` scores are from the side to move,
+  not from White. Negate/normalize before comparing evals across successive
+  positions or displaying a White-centric eval bar. (`gradeMove` vs the MultiPV
+  run of the same position is safe — same side to move.)
+- Engine access goes through `src/lib/engine/client.ts` (EngineClient) — it
+  serializes searches internally; never talk UCI to the worker directly.
+  `AnalyzeResult.bestMove` is null for terminal positions — always handle it.

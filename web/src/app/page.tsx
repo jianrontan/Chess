@@ -31,27 +31,39 @@ export default function Home() {
   const [health, setHealth] = useState<string>("checking…");
 
   useEffect(() => {
+    // Strict mode mounts effects twice in dev: the cancelled flag keeps the
+    // disposed first engine's rejections from touching the live UI state.
+    let cancelled = false;
     const engine = new EngineClient();
     engineRef.current = engine;
     engine
       .init()
       .then(() => {
+        if (cancelled) return;
         setIsolated(typeof crossOriginIsolated !== "undefined" && crossOriginIsolated);
         setThreads(engine.info.threads);
         setVariant(engine.info.variant);
         setStatus("ready");
       })
       .catch((e: unknown) => {
+        if (cancelled) return;
         setStatus("error");
         setError(e instanceof Error ? e.message : String(e));
       });
 
     fetch("/api/health")
       .then((r) => r.json())
-      .then((j: { ok?: boolean }) => setHealth(j.ok ? "ok" : "unexpected response"))
-      .catch(() => setHealth("unreachable"));
+      .then((j: { ok?: boolean }) => {
+        if (!cancelled) setHealth(j.ok ? "ok" : "unexpected response");
+      })
+      .catch(() => {
+        if (!cancelled) setHealth("unreachable");
+      });
 
-    return () => engine.dispose();
+    return () => {
+      cancelled = true;
+      engine.dispose();
+    };
   }, []);
 
   async function analyze() {
