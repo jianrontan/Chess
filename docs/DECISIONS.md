@@ -110,3 +110,19 @@ download script + STOCKFISH_PATH).
 **Code conventions added:** no `any` in TypeScript (ESLint `no-explicit-any` =
 error); Tailwind 4 is CSS-first — the big globals.css is the theme config, which
 is why GitHub's language bar shows "CSS".
+
+## 2026-07-14 — Non-functional requirements
+
+**Decided:** hard budget of **$5/month** at expected scale (~30 users launch
+month, ~5/month after); latency targets of ~10s top-k analysis, ~3s move
+grading, streaming explanation with first words ~2s (all "tune by feel later").
+
+**Considerations:** per-explanation LLM cost is ~half a cent on Haiku, so the
+launch month lands around $2.50 — the budget binds on infrastructure, not
+tokens. Its main effect: **Workers Paid ($5/mo) is ruled out**, which resolves
+the previously deferred Vectorize question to the free tier (~13k chunks @384d
+or ~6k @768d). Rate limits get sized so one abusive user cannot blow the monthly
+cap. Move grading at ~3s is compatible with the matched-depth rule because a
+single-move `searchmoves` to the top-k run's depth is far cheaper than the full
+MultiPV search. One-time costs (eval sweeps, embedding) sit outside the monthly
+cap.

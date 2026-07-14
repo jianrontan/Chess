@@ -390,6 +390,38 @@ RAG approach. It is out of scope for v1.
   hand-labelled validation set is the guard, and its agreement rate gets reported
   alongside the results.
 
+### Non-functional requirements
+
+Set 2026-07-14. These are product constraints, not aspirations — designs that
+violate them get changed.
+
+**Budget: ≤ $5/month total** at the expected scale (~30 users in the launch
+month, ~5 users/month after). Consequences:
+
+- LLM spend fits easily: ~half a cent per explanation on Haiku means a 450-request
+  launch month costs ~$2.50 and steady state under $0.50.
+- **Workers Paid ($5/mo) is ruled out** — it would consume the entire budget. The
+  Vectorize corpus therefore lives on the free tier: ~13k chunks @ 384d
+  (bge-small) or ~6k curated chunks @ 768d (bge-base); exact pick made in
+  Phase 4 when corpus quality is visible.
+- Per-user rate limits are sized so a single abusive or runaway user cannot
+  exceed the monthly cap; the provider-side spend limit is the backstop.
+- One-time costs (eval sweeps, corpus embedding) are budgeted separately and are
+  not part of the monthly cap.
+
+**Latency targets (rough, to be tuned by feel once real):**
+
+| Interaction | Target | Mechanism |
+| --- | --- | --- |
+| Top-k analysis (Mode 1) | ≤ ~10s to settled evals | fixed-movetime MultiPV, threaded on desktop; progressive display as depth climbs |
+| Grade a tried move (Mode 2) | ≤ ~3s | single-move `searchmoves` to the same depth as the top-k run (searching one move is far cheaper than all) |
+| Explanation | first words ≤ ~2s, complete ~3-5s | streaming from the Worker; Haiku is fast |
+| Image-to-FEN scan | ≤ ~5s to the confirm screen | one vision call |
+
+Engine analysis should render progressively (evals visibly deepening) rather
+than blocking on the full 10 seconds — perceived latency matters more than
+wall-clock.
+
 ### Cost model (why this is nearly free to run)
 
 | Piece | Where it runs | Cost |
@@ -397,7 +429,7 @@ RAG approach. It is out of scope for v1.
 | Engine (MultiPV analysis) | Visitor's browser (WASM) | 0 |
 | Frontend | Workers Static Assets | 0 (free tier) |
 | Worker | Cloudflare | 0 at this scale (free tier) |
-| Vectorize | Cloudflare | free tier holds ~6k chunks @768d; the full 20–50k corpus needs Workers Paid ($5/mo) or a slimmer 384d corpus — decision deferred to Phase 4 |
+| Vectorize | Cloudflare | free tier (Workers Paid ruled out by the $5/mo budget NFR): ~13k chunks @384d or ~6k @768d, picked in Phase 4 |
 | Explanation LLM call | Claude API | ~1 call per request; cents/day at demo traffic |
 | Image-to-FEN (v1) | Claude API (vision) | well under a cent per scan; v2 client-side CV model would be 0 |
 | Corpus embedding | Homelab / Workers AI | one-time, ~0 |

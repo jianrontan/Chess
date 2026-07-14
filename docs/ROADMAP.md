@@ -92,8 +92,9 @@ The differentiator. Build it before RAG so RAG has a scoreboard on arrival.
       metadata payload); Vectorize metadata tag pre-filter + vector re-rank
 - [ ] *Pin ONE embedding model available in both planes (bge-base-en-v1.5 768d /
       `@cf/baai/bge-base-en-v1.5`); stamp model+dims into the index name
-- [ ] *Decide the Vectorize budget (deferred from review): Workers Paid $5/mo for
-      the full corpus at 768d, or free tier with ~13k chunks @ 384d
+- [ ] *Vectorize sizing (constrained by the $5/mo budget NFR — Workers Paid is
+      ruled out): free tier, either ~13k chunks @ 384d (bge-small) or ~6k
+      curated chunks @ 768d (bge-base); pick when corpus quality is visible
 - [ ] *Retrieval quality gate BEFORE full embed: ~50-position golden set with
       hand-picked relevant comments; define the recall bar that justifies RAG
 - [ ] Worker: feature-based retrieval, inject top matches into the prompt
