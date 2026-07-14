@@ -1,0 +1,72 @@
+# ---------- Secrets / env ----------
+.env
+.env.*
+!.env.example
+.dev.vars          # Cloudflare Workers local secrets
+
+# ---------- Claude Code ----------
+# Personal/machine-specific settings stay local; CLAUDE.md and shared
+# .claude/ config (settings.json, commands, agents) ARE committed.
+.claude/settings.local.json
+
+# ---------- Node / TypeScript / Next.js (web) ----------
+node_modules/
+.next/
+out/
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+coverage/
+.eslintcache
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+
+# Cloudflare
+.wrangler/
+.open-next/
+
+# ---------- Python (pipeline) ----------
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.uv/
+*.egg-info/
+.eggs/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# ---------- Chess data & artifacts (large / regenerable) ----------
+# Raw corpora and puzzle DBs are huge — keep them out of git.
+data/
+!data/.gitkeep
+*.pgn
+*.csv.zst
+*.zst
+*.bz2
+# Generated embeddings / vector indexes
+*.faiss
+*.index
+embeddings/
+# Native Stockfish binaries (download per-machine, don't commit)
+stockfish
+stockfish.exe
+engines/
+
+# Small tracked fixtures are allowed — commit them explicitly, e.g.:
+#   git add -f pipeline/tests/fixtures/sample.pgn
+
+# ---------- OS / editor ----------
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+*.swo
