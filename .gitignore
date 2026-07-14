@@ -77,3 +77,6 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Playwright MCP browser snapshots
+.playwright-mcp/
