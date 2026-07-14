@@ -14,7 +14,25 @@ The user gives the app a chess position. They can:
 
 - set up pieces on the board by hand,
 - paste a FEN string (a one-line text encoding of a position),
-- or arrive at a position by playing moves on the board.
+- arrive at a position by playing moves on the board,
+- or **upload an image of a board** (a screenshot from a site or book diagram,
+  or a photo) and have the app read the position from it.
+
+### Image-to-FEN
+
+Image input is a convenience layer in front of the same pipeline: the image is
+converted to FEN, then everything proceeds as if the user had typed that FEN.
+
+Design: the browser sends the image to the Worker, which asks a vision-capable
+LLM to transcribe the board into FEN. The result is validated (python-chess-style
+legality rules in TS: piece counts, kings, side to move) and then — critically —
+**shown to the user on the board editor for confirmation**, because vision
+transcription of chess diagrams is good but not perfect, and a silently wrong
+square would poison every downstream explanation. The user fixes any wrong piece
+with one click and confirms. Clean screenshots transcribe near-perfectly; angled
+photos of physical boards are best-effort. A dedicated client-side CV model is a
+possible later upgrade if screenshot volume justifies it; the LLM route costs one
+cheap vision call and ships in a day.
 
 From there, there are two interaction modes — the same two a chess.com analysis
 board offers:

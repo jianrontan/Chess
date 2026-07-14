@@ -30,6 +30,8 @@ The demo becomes real: a position on screen, analyzed locally.
 - [ ] Prompt v1: position + candidates + PVs + userMove → structured explanation
       (best-move rationale, per-alternative comparison, line walkthroughs)
 - [ ] Streaming response into the UI
+- [ ] Image-to-FEN: upload a board screenshot/photo → Worker vision-LLM call →
+      FEN validated + confirmed by the user on the board editor before analysis
 - [ ] Deploy: Pages (frontend) + Worker, wired to the domain
 - Done when: the full user experience works end to end — this is the "with vs
   without RAG" baseline the eval will measure against.
