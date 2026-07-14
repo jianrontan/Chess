@@ -16,11 +16,33 @@ The user gives the app a chess position. They can:
 - paste a FEN string (a one-line text encoding of a position),
 - or arrive at a position by playing moves on the board.
 
-The app then answers three questions a human coach would answer:
+From there, there are two interaction modes — the same two a chess.com analysis
+board offers:
+
+**Mode 1 — "What should I play?"** The app answers three questions a human coach
+would answer:
 
 1. **What is the best move here?**
 2. **Why is it the best move — and why are the other candidate moves worse?**
 3. **What happens next in each line — if I play this, how does the game continue?**
+
+**Mode 2 — "Let me try a move."** The user plays a candidate move on the board and
+the app grades it, chess.com-style:
+
+1. **How good was that?** — classified by how much evaluation it gave up versus
+   the best move: excellent / good / inaccuracy / mistake / blunder.
+2. **Why?** — if the move is wrong, the app shows the concrete refutation: the
+   opponent's punishing reply and the line that follows, explained in words.
+3. **What was better?** — the best move, with its explanation, one click away.
+
+For example, if the user tries Qxb7 in a position where it loses the queen:
+
+> **Qxb7? — blunder (+0.8 → −6.5)**
+>
+> The queen grabs a pawn but walks into a trap: Black replies Rb8, pinning your
+> queen against the king. The queen cannot escape, and after ...Rxb7 you have
+> lost a queen for a rook. The best move was Qd3, keeping the queen safe and
+> maintaining your edge.
 
 ### A concrete example
 
@@ -109,6 +131,21 @@ happens next" experience:
 Running MultiPV costs nothing extra in infrastructure because the engine runs on
 the visitor's CPU.
 
+**Step 2b — Grading a user's move (Mode 2).** When the user tries a move of their
+own, one of two things is true:
+
+- The move is already among the top k candidates — we have its eval and PV for free.
+- It is not (the interesting case). We run one extra engine search restricted to
+  that single move (UCI `searchmoves`), which returns its true evaluation and its
+  **refutation line** — the opponent's best punishment.
+
+The move is then classified by its eval delta against the best move, using
+chess.com-style thresholds (roughly: <0.3 pawns lost = good, 0.3–1 = inaccuracy,
+1–2 = mistake, >2 = blunder, adjusted for how winning the position already is).
+The delta and refutation PV become engine facts for synthesis, exactly like the
+candidates in Mode 1. The extra search also runs in the browser, so Mode 2 costs
+no more than Mode 1: one LLM call.
+
 **Step 3 — Request to the Worker.** The browser POSTs to a Cloudflare Worker:
 
 ```json
@@ -118,11 +155,15 @@ the visitor's CPU.
     { "move": "d5c7", "eval": 520,  "pv": ["d5c7", "e8d8", "c7a8", "…"] },
     { "move": "d5b6", "eval": 110,  "pv": ["d5b6", "a8c8", "…"] },
     { "move": "d1f3", "eval": 40,   "pv": ["d1f3", "c8c8", "…"] }
-  ]
+  ],
+  "userMove": { "move": "d1b7", "eval": -650, "pv": ["d1b7", "c8b8", "…"] }
 }
 ```
 
-The Worker holds the LLM API key (the browser never sees it) and is stateless.
+`userMove` is present only in Mode 2; the Worker's synthesis prompt then centers
+on grading that move against the candidates rather than presenting the candidates
+alone. The Worker holds the LLM API key (the browser never sees it) and is
+stateless.
 
 **Step 4 — Feature extraction.** A raw position is piece coordinates; you cannot
 search a prose library with coordinates. So the position (and the candidate lines)
@@ -263,6 +304,8 @@ the serve path uses exactly one synthesis call per request.
   moves and numeric evaluations; does not produce prose.
 - **MultiPV** — engine mode returning the top k moves each with its own line,
   instead of only the best one.
+- **searchmoves** — engine option restricting analysis to specific moves; how we
+  get the true eval and refutation of a user-tried move that isn't in the top k.
 - **Principal variation (PV)** — the engine's expected sequence of best play for
   both sides from a given move.
 - **Centipawn** — 1/100 of a pawn; the unit of engine evaluations. +520 means
