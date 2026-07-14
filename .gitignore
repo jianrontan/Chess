@@ -4,6 +4,10 @@
 !.env.example
 .dev.vars          # Cloudflare Workers local secrets
 
+# ---------- Private docs (personal notes, never committed) ----------
+docs/private/*
+!docs/private/.gitkeep
+
 # ---------- Claude Code ----------
 # Personal/machine-specific settings stay local; CLAUDE.md and shared
 # .claude/ config (settings.json, commands, agents) ARE committed.

@@ -34,6 +34,9 @@ LLM-judge. Headline result = explanation accuracy **with vs without RAG**.
 - `/pipeline` — Python. Offline data parsing, feature extraction, embeddings, eval.
   Runs on the homelab, never in production.
 - `/web` — TypeScript. The live app.
+- `/docs` — design docs; `docs/architecture.md` is the definitive system design
+  (including the MultiPV decision: top-k candidates + PVs power the "why not the
+  alternatives" and per-line explanations). `docs/private/` is git-ignored personal notes.
 
 Per-directory `CLAUDE.md` files should be added to each as they're built, so Python and
 TS conventions don't bleed into each other. This root file is the shared context.
