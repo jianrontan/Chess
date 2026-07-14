@@ -35,7 +35,7 @@ flowchart TD
     end
 
     subgraph CF["Cloudflare"]
-        Pages["Pages\n(static frontend host)"]
+        Pages["Workers Static Assets\n(static frontend host)"]
         Worker["Worker\nretrieval + LLM proxy\n(holds the API key)"]
         Vectorize[("Vectorize\ncommentary index")]
         Worker --> Vectorize
@@ -97,7 +97,7 @@ without** retrieval, which shows whether the RAG layer earns its place.
 | Chess engine | Stockfish compiled to WebAssembly, run in a Web Worker (client-side) |
 | Backend | Cloudflare Worker (retrieval + LLM proxy) |
 | Vector store | Cloudflare Vectorize |
-| Hosting | Cloudflare Pages (frontend), free tier |
+| Hosting | Cloudflare Workers Static Assets (Next.js static export), free tier |
 | Language model | Claude (Haiku by default), behind a provider-agnostic proxy |
 | Offline pipeline | Python with uv, ruff, pytest, python-chess, native Stockfish |
 | Embeddings | Local sentence-transformers or Cloudflare Workers AI |

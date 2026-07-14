@@ -49,7 +49,9 @@ TS conventions don't bleed into each other. This root file is the shared context
 - **Stockfish compiled to WebAssembly**, in a Web Worker — the engine runs client-side
   on the visitor's machine (free compute; this is the key cost insight).
 - **Cloudflare Worker** = thin backend holding the LLM API key + doing retrieval.
-  **Cloudflare Vectorize** = vector store. **Cloudflare Pages** = static frontend host.
+  **Cloudflare Vectorize** = vector store. Frontend = **Next.js static export
+  (`output: 'export'`) on Workers Static Assets** — NOT Pages (next-on-pages is
+  deprecated); COOP/COEP headers via `_headers` for threaded Stockfish WASM.
   Standing infra cost ~$0.
 
 **Pipeline (offline):** Python + `uv`, `ruff`, `pytest`, python-chess, and a **native

@@ -23,16 +23,34 @@ The user gives the app a chess position. They can:
 Image input is a convenience layer in front of the same pipeline: the image is
 converted to FEN, then everything proceeds as if the user had typed that FEN.
 
-Design: the browser sends the image to the Worker, which asks a vision-capable
-LLM to transcribe the board into FEN. The result is validated (python-chess-style
-legality rules in TS: piece counts, kings, side to move) and then — critically —
-**shown to the user on the board editor for confirmation**, because vision
-transcription of chess diagrams is good but not perfect, and a silently wrong
-square would poison every downstream explanation. The user fixes any wrong piece
-with one click and confirms. Clean screenshots transcribe near-perfectly; angled
-photos of physical boards are best-effort. A dedicated client-side CV model is a
-possible later upgrade if screenshot volume justifies it; the LLM route costs one
-cheap vision call and ships in a day.
+Design (v1): the browser sends the image to the Worker, which asks a
+vision-capable LLM to transcribe the board into FEN. The result is validated
+(piece-count/king sanity rules in TS) and then — critically — **confirmed by the
+user**, because vision transcription of chess diagrams is decent but single-piece
+errors are common, and a silently wrong square would poison every downstream
+explanation. The confirm screen is designed to make errors findable and fixable:
+
+- the transcribed board rendered **side by side with the uploaded image**,
+- click any square to fix a wrong or missing piece,
+- a one-click **orientation flip** (photos and screenshots are often from
+  Black's side, and an inverted board is a valid-looking but wrong position),
+- explicit **side-to-move and castling-rights inputs** — an image fundamentally
+  cannot supply these, so the UI asks rather than guesses.
+
+Two honest caveats. First, angled photos of physical boards are best-effort;
+clean screenshots are the reliable case. Second, the vision call is metered and
+is an upload endpoint, so it sits behind the same abuse protections as the
+explain endpoint.
+
+The designed v2 upgrade is a **traditional open-source CV model running
+client-side** (board detection + per-square piece classifier, compiled to run in
+the browser via ONNX Runtime Web — the approach of projects like chesscog and
+LiveChess2FEN). That path costs nothing per scan, has no abuse surface, and the
+image never leaves the user's device — the same "compute in the visitor's
+browser" principle as the engine. It is deferred, not chosen first, because it
+is days-to-weeks of work (piece-set variety across chess sites is the hard
+part) versus a day for the vision-LLM route, and the confirmation UI is
+required in both designs anyway.
 
 From there, there are two interaction modes — the same two a chess.com analysis
 board offers:
@@ -122,6 +140,20 @@ artifact is the vector index; the serve plane reads it at request time.
 
 ### The serve plane: one request, step by step
 
+**Step 0 — Deployment substrate (decided after review).** The frontend is a
+Next.js **static export** (`output: 'export'`) served from **Cloudflare Workers
+Static Assets** — not Cloudflare Pages (`next-on-pages` is deprecated and does
+not support Next 16). This choice is load-bearing: multi-threaded Stockfish WASM
+requires `SharedArrayBuffer`, which requires the COOP/COEP headers
+(`Cross-Origin-Opener-Policy: same-origin`,
+`Cross-Origin-Embedder-Policy: require-corp`) on the document — and with static
+assets those are set declaratively in a `_headers` file. Without them the engine
+silently falls back to a single-threaded build, several times weaker at the same
+latency. Consequences we accept: every cross-origin subresource must be
+CORP/CORS-clean, so the API Worker lives **same-origin** under the app's domain,
+and the client feature-detects `crossOriginIsolated` with an explicit
+single-thread lite fallback (primarily for older mobile browsers).
+
 **Step 1 — Position in.** The UI (Next.js + react-chessboard) holds the current
 position as a FEN string. All legality on the client is enforced by the board
 library; the engine only ever sees legal positions.
@@ -157,12 +189,23 @@ own, one of two things is true:
   that single move (UCI `searchmoves`), which returns its true evaluation and its
   **refutation line** — the opponent's best punishment.
 
-The move is then classified by its eval delta against the best move, using
-chess.com-style thresholds (roughly: <0.3 pawns lost = good, 0.3–1 = inaccuracy,
-1–2 = mistake, >2 = blunder, adjusted for how winning the position already is).
-The delta and refutation PV become engine facts for synthesis, exactly like the
-candidates in Mode 1. The extra search also runs in the browser, so Mode 2 costs
-no more than Mode 1: one LLM call.
+The move is then classified by its delta against the best move — computed on
+**win percentage** (the Lichess conversion from centipawns), not raw centipawns,
+because a 100cp drop matters enormously in an equal position and not at all when
+already +9. Thresholds follow the familiar chess.com-style classes (good /
+inaccuracy / mistake / blunder). Two disciplines keep the delta honest: the
+`searchmoves` grading run must use the **same movetime/depth** as the MultiPV
+run (a cross-depth delta is skewed), and the UI shows the reached depth so a
+shallow mobile analysis is never dressed up as a deep one. The delta and
+refutation PV become engine facts for synthesis, exactly like the candidates in
+Mode 1. The extra search also runs in the browser, so Mode 2 costs no more than
+Mode 1: one LLM call.
+
+**Engine budgets by device:** desktop (cross-origin isolated) gets the threaded
+NNUE build with k = 3–5 and a fixed movetime of a few seconds; mobile gets the
+single-thread lite build, k = 3, fixed movetime — realistically depth 10–14,
+enough for tactics. Fixed movetime, never fixed depth, so weak devices degrade
+in quality rather than hanging.
 
 **Step 3 — Request to the Worker.** The browser POSTs to a Cloudflare Worker:
 
@@ -183,6 +226,24 @@ on grading that move against the candidates rather than presenting the candidate
 alone. The Worker holds the LLM API key (the browser never sees it) and is
 stateless.
 
+**The Worker trusts nothing from the client.** The payload above is
+attacker-controllable input to a paid API, so before any LLM call the Worker:
+
+- validates the FEN and **replays every candidate/PV move for legality** (a
+  TS chess library does this in ~1ms) — garbage or injected "moves" are rejected,
+  never forwarded into the prompt;
+- clamps evals to sane ranges and labels them "client-reported" in the prompt —
+  a spoofed +900 for a losing move can degrade one user's own explanation, but
+  the prompt never treats client numbers as verified truth;
+- enforces payload caps: k ≤ 5, bounded PV length, bounded image size.
+
+**And the endpoint defends itself.** An unauthenticated Worker fronting a paid
+LLM API would be drained by a script overnight. Before the endpoint is public:
+Cloudflare Turnstile verification, per-IP rate limiting, a `max_tokens` cap per
+call, and a provider-side monthly spend limit as the backstop. The image
+endpoint (vision calls) is the most expensive surface and gets the strictest
+limits.
+
 **Step 4 — Feature extraction.** A raw position is piece coordinates; you cannot
 search a prose library with coordinates. So the position (and the candidate lines)
 are converted into describable facts: "knight fork on king and rook", "back rank
@@ -191,11 +252,22 @@ from board logic; the tactical labeling can be assisted by a fast LLM call. Thes
 features become the retrieval query.
 
 **Step 5 — Retrieval (the RAG part).** The features are embedded and used to query
-**Cloudflare Vectorize**, which holds ~20–50k chunks of human chess commentary
+**Cloudflare Vectorize**, which holds the corpus of human chess commentary
 (see build plane below). The top matches — human explanations of *similar
 situations* — come back as text. Retrieval brings the vocabulary and pedagogy of
 real annotators: how humans actually explain a fork, why "winning the exchange"
 matters, what a plan looks like in this structure.
+
+Retrieval is deliberately **symmetric**: what gets embedded at build time is not
+the raw narrative prose but each chunk's **feature-summary string** — the same
+vocabulary the serve plane queries with — with the prose carried as metadata
+payload. (Embedding informal forum narration and querying it with terse feature
+strings is an asymmetric-retrieval mismatch that quietly returns noise.) Exact
+feature tags are additionally stored as Vectorize metadata, so retrieval is a
+hard tag pre-filter first, vector similarity as re-ranking second. Retrieval
+quality is gated before the full corpus is embedded: a ~50-position golden set
+with hand-picked relevant comments must hit an agreed recall bar, or the RAG
+design gets revisited rather than shipped blind.
 
 **Step 6 — Synthesis.** The Worker builds one prompt containing:
 
@@ -223,38 +295,61 @@ by hand — never per user request.
 **Corpus construction (one-time, then occasional refreshes):**
 
 1. **Source:** the GAMEKNOT commentary dataset — ~298k pairs of (game move,
-   human-written explanation), plus optional opening-theory text.
+   human-written explanation), plus optional opening-theory text. Before any
+   cleaning code is written: a licensing/provenance check (it is scraped forum
+   content from a 2018 research project) and an identified fallback corpus
+   (permissively licensed annotated PGNs, Lichess studies).
 2. **Clean and filter:** drop the noisy categories (bare descriptions, chatter),
    keep explanations of plans, quality judgments, and comparisons; dedupe;
    normalize the informal forum prose. Expect to land at ~20–50k good chunks.
 3. **Key each chunk by position:** for every comment, replay its game with
    python-chess to the position it refers to, and store the FEN plus extracted
-   features (the same feature vocabulary the serve plane uses) as metadata. The
-   comment text is what gets embedded.
-4. **Embed and upload:** a sentence-embedding model (local sentence-transformers or
-   Cloudflare Workers AI — free either way) turns each chunk into a vector;
-   vectors + metadata are uploaded to Vectorize.
+   features (the same feature vocabulary the serve plane uses). What gets
+   **embedded** is the chunk's feature-summary string; the prose rides along as
+   metadata payload (see Step 5's symmetric-retrieval rationale).
+4. **Embed and upload:** one pinned embedding model, **byte-identical between
+   build and query time** — bge-base-en-v1.5 (768d), which exists both as a local
+   sentence-transformers model and as `@cf/baai/bge-base-en-v1.5` on Workers AI.
+   Model + dimensions are stamped into the Vectorize index name so a mismatch is
+   impossible to miss. Sizing note: 20–50k chunks × 768d exceeds the Vectorize
+   free tier (5M stored dims); the call between Workers Paid ($5/mo, plenty) and
+   a smaller 384d corpus is deferred until the corpus actually exists.
 
 The shared feature vocabulary between build and serve is the load-bearing design
 decision: the serve plane asks "positions with a knight fork and an exposed king"
-and the index can answer, because chunks were labeled the same way.
+and the index can answer, because chunks were labeled the same way. Because it
+is implemented twice (Python at build, TS at serve), the vocabulary lives in a
+**versioned JSON feature-spec at the repo root** — single source of truth — with
+cross-language golden fixtures (same FENs must yield identical feature sets)
+tested in both pytest and vitest, so silent drift between the two
+implementations is caught by CI instead of quietly rotting retrieval.
 
 **The eval harness (the project's differentiator):**
 
 Each Lichess puzzle is a free answer key: FEN, solution moves, and theme tags
 ("fork", "pin", "backRankMate"). The harness:
 
-1. samples puzzles stratified by theme and rating band,
-2. runs the full serve pipeline on each position,
+1. samples puzzles stratified by theme and rating band (applying the setup move
+   first — the CSV's FEN is the position *before* the opponent's last move),
+2. runs the serve pipeline on each position — the **same versioned prompt
+   template the Worker ships**, never a re-implementation, with prompt version,
+   model ID, and engine depth/movetime recorded in every sweep,
 3. grades three signals:
    - **legality** (automatic, python-chess) — plumbing check,
-   - **move match** vs the puzzle solution (automatic) — plumbing check,
+   - **move match** — scored as "the solution move OR an eval-equivalent move",
+     because the engine may legitimately pick a different equally-winning move
+     (and Lichess itself accepts alternate same-length mates),
    - **explanation correctness** — does the prose identify and correctly apply the
-     right tactic? Graded by an LLM judge that is first validated against a
-     hand-labelled sample of 100–200 explanations,
-4. reports per-theme accuracy and failure categories, and — the headline — the
-   explanation score **with retrieval versus without**, which measures whether the
-   RAG layer actually earns its place.
+     right tactic? Graded by an LLM judge from a **different model family than
+     the synthesizer** (to avoid a model grading its own accent), validated
+     against a hand-labelled sample of ~100 explanations with an explicit gate:
+     judge–human agreement ≥ 80% on held-out labels, reported per failure
+     category,
+4. reports per-theme accuracy and failure categories (theme tags are
+   auto-generated and noisy, so per-theme numbers carry an error floor), and —
+   the headline — a **three-arm comparison** on the same sample: engine facts
+   only, engine + features (retrieval off), engine + features + RAG. Three arms,
+   not two, so the RAG delta is not confounded with the feature delta.
 
 ### Do we need to train anything?
 
@@ -300,15 +395,18 @@ RAG approach. It is out of scope for v1.
 | Piece | Where it runs | Cost |
 | --- | --- | --- |
 | Engine (MultiPV analysis) | Visitor's browser (WASM) | 0 |
-| Frontend | Cloudflare Pages | 0 (free tier) |
-| Worker + Vectorize | Cloudflare | 0 at this scale (free tiers) |
+| Frontend | Workers Static Assets | 0 (free tier) |
+| Worker | Cloudflare | 0 at this scale (free tier) |
+| Vectorize | Cloudflare | free tier holds ~6k chunks @768d; the full 20–50k corpus needs Workers Paid ($5/mo) or a slimmer 384d corpus — decision deferred to Phase 4 |
 | Explanation LLM call | Claude API | ~1 call per request; cents/day at demo traffic |
+| Image-to-FEN (v1) | Claude API (vision) | well under a cent per scan; v2 client-side CV model would be 0 |
 | Corpus embedding | Homelab / Workers AI | one-time, ~0 |
 | Eval sweeps | Batch API + prompt caching | tens of dollars, one-time per sweep |
 
 The expensive-looking parts (engine compute, alternatives, deep lines) are free
-because they happen on the client. The only metered resource is LLM tokens, and
-the serve path uses exactly one synthesis call per request.
+because they happen on the client. The metered resources are LLM tokens (one
+synthesis call per request, capped and rate-limited) and possibly $5/mo for
+vector storage if the full corpus is kept at 768 dimensions.
 
 ---
 

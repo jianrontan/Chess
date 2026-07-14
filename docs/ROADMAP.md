@@ -1,7 +1,8 @@
 # Roadmap
 
 Each phase is independently shippable and each later phase is measured by the one
-before it. Check items off as they land.
+before it. Check items off as they land. Revised after the design review — see
+DECISIONS.md for the reasoning behind the starred (*) items.
 
 ## Phase 0 — Foundations (done)
 
@@ -10,68 +11,108 @@ before it. Check items off as they land.
 - [x] `pipeline/` (uv, python-chess, ruff, pytest) with board helpers + smoke tests
 - [x] Design decisions recorded: Cloudflare Workers + Vectorize, MultiPV, two
       interaction modes, no-training rationale
+- [x] Design review (3 agents); decisions logged in DECISIONS.md
+- [x] Dev env: hooks (ruff/eslint per edit, pytest/tsc per turn), project
+      settings.json, /run-eval + /add-puzzle-fixture commands, eval-runner agent
 
 ## Phase 1 — Board + engine in the browser
 
 The demo becomes real: a position on screen, analyzed locally.
 
+- [ ] *Deploy hello-world FIRST: Next.js static export (`output: 'export'`) on
+      Workers Static Assets, COOP/COEP via `_headers`, prove threaded Stockfish
+      WASM + same-origin fetch to a stub Worker both work in production
+- [ ] *CI: GitHub Actions running ruff+pytest (pipeline) and lint+tsc+build (web)
 - [ ] Board UI with `react-chessboard`: set up pieces, paste FEN, play moves
-- [ ] Stockfish WASM in a Web Worker, wrapped in a typed client
-      (init, `analyze(fen, {multipv: k})`, `gradeMove(fen, move)` via searchmoves)
+- [ ] *Stockfish WASM (pin the `stockfish` npm package, SF 18): typed client
+      (init, `analyze(fen, {multipv: k})`, `gradeMove(fen, move)` via searchmoves);
+      crossOriginIsolated feature-detect with explicit single-thread lite fallback
+      (mobile: k=3, fixed movetime, show reached depth)
 - [ ] Analysis panel: top-k candidates with evals + PVs, shown as raw lines first
-- [ ] Mode 2 skeleton: user plays a move → delta classification
-      (good/inaccuracy/mistake/blunder) with the refutation line shown
-- Done when: any legal position can be analyzed entirely offline in the browser.
+- [ ] *Mode 2 skeleton: delta classification via win-percentage conversion
+      (Lichess formula), not raw centipawns; searchmoves run must match the
+      MultiPV run's movetime/depth
+- Done when: any legal position can be analyzed in the browser on the deployed
+  site, threaded on desktop, with a working single-thread fallback.
 
 ## Phase 2 — Explanations, ungrounded (LLM, no RAG yet)
 
 - [ ] Cloudflare Worker: `/api/explain` endpoint, provider-agnostic LLM client,
-      API key in Worker env (`.dev.vars` locally)
-- [ ] Prompt v1: position + candidates + PVs + userMove → structured explanation
-      (best-move rationale, per-alternative comparison, line walkthroughs)
-- [ ] Streaming response into the UI
-- [ ] Image-to-FEN: upload a board screenshot/photo → Worker vision-LLM call →
-      FEN validated + confirmed by the user on the board editor before analysis
-- [ ] Deploy: Pages (frontend) + Worker, wired to the domain
-- Done when: the full user experience works end to end — this is the "with vs
-  without RAG" baseline the eval will measure against.
+      API key in Worker env (`.dev.vars` locally), same-origin route under the
+      app's domain
+- [ ] *Abuse protection BEFORE the endpoint is public: Turnstile + per-IP rate
+      limit + payload caps (k≤5, PV length, image size) + `max_tokens` cap +
+      provider-side monthly spend limit
+- [ ] *Worker validates client input: replay candidate/PV moves for legality
+      (chessops), clamp evals, treat evals as "client-reported"
+- [ ] *Prompt v1 as a versioned template file consumed by BOTH the Worker and the
+      (future) eval harness — never two copies
+- [ ] Streaming response into the UI (pipe the SSE body through; don't buffer)
+- [ ] Image-to-FEN v1: vision-LLM call via the Worker; confirm screen shows the
+      transcribed board BESIDE the uploaded image with click-to-fix squares,
+      one-click orientation flip, and explicit side-to-move + castling inputs
+      (an image cannot supply those). Client-side ONNX CV model is the designed
+      v2 upgrade (zero cost, zero abuse surface, privacy win).
+- [ ] Deploy: static export + Worker, wired to the domain
+- Done when: the full user experience works end to end on the public site with
+  abuse protection on.
 
 ## Phase 3 — Eval harness (pipeline)
 
 The differentiator. Build it before RAG so RAG has a scoreboard on arrival.
 
 - [ ] Download + parse Lichess puzzle CSV; stratified sampler (theme x rating band)
-- [ ] Runner: replay setup moves, run the serve pipeline per puzzle
-      (native Stockfish here, not WASM)
-- [ ] Automatic checks: legality, move-match
-- [ ] LLM-judge for explanation/theme correctness (0/1/2 rubric)
-- [ ] Hand-label 100-200 explanations; measure judge agreement; report it
+- [ ] Runner: apply the setup move first (CSV FEN is BEFORE the opponent's move),
+      then run the serve pipeline per puzzle (native Stockfish, not WASM);
+      record prompt version + model ID + engine depth/movetime in every sweep
+- [ ] *Automatic checks: legality; move-match scored as "solution move OR
+      eval-equivalent move" (engine may pick a different equally-winning move)
+- [ ] *LLM-judge from a DIFFERENT model family than the synthesizer (0/1/2 rubric)
+- [ ] *Judge validation with a gate: hand-label ~100 explanations (timeboxed, one
+      rubric revision); done only if judge-human agreement ≥ 80% on held-out
+      labels; report agreement per failure category
 - [ ] Report: per-theme accuracy + failure categories (wrong theme / right theme
-      wrong reasoning / hallucinated line)
-- [ ] Use Batch API + prompt caching to keep sweep cost down
-- Done when: one command produces a per-theme scorecard for the current system.
+      wrong reasoning / hallucinated line); theme tags are noisy — note the floor
+- [ ] Use Batch API + prompt caching; define sweep N and budget up front
+- Done when: `/run-eval` produces a per-theme scorecard for the deployed prompt,
+  and the judge has passed its agreement gate.
 
 ## Phase 4 — Feature extraction + RAG
 
-- [ ] Feature extractor in `pipeline/` (python-chess): checks, forks, pins,
-      open files, king safety, material — the shared vocabulary
+- [ ] *Feature vocabulary as a versioned JSON spec at repo root — single source
+      of truth for both languages; cross-language golden fixtures (same FENs →
+      identical feature sets) tested in pytest AND vitest
+- [ ] Feature extractor in `pipeline/` (python-chess) + TS mirror in the Worker,
+      both conforming to the spec
+- [ ] *GAMEKNOT licensing/provenance spike + fallback corpus identified (e.g.
+      permissively licensed annotated PGNs, Lichess studies) BEFORE cleaning code
 - [ ] GAMEKNOT corpus: download, clean, filter categories, position-key each
-      comment (replay games), chunk to ~20-50k entries
-- [ ] Embed + upload to Vectorize
+      comment (replay games), chunk
+- [ ] *Symmetric retrieval: embed the feature-summary string per chunk (prose as
+      metadata payload); Vectorize metadata tag pre-filter + vector re-rank
+- [ ] *Pin ONE embedding model available in both planes (bge-base-en-v1.5 768d /
+      `@cf/baai/bge-base-en-v1.5`); stamp model+dims into the index name
+- [ ] *Decide the Vectorize budget (deferred from review): Workers Paid $5/mo for
+      the full corpus at 768d, or free tier with ~13k chunks @ 384d
+- [ ] *Retrieval quality gate BEFORE full embed: ~50-position golden set with
+      hand-picked relevant comments; define the recall bar that justifies RAG
 - [ ] Worker: feature-based retrieval, inject top matches into the prompt
-- [ ] Mirror the feature extractor in the Worker (TS) or precompute client-side
-- Done when: explanations cite retrieved commentary and eval runs with RAG on.
+- Done when: retrieval passes the golden-set gate and eval runs with RAG on.
 
 ## Phase 5 — The result
 
-- [ ] Full eval sweep: with-RAG vs without-RAG, same stratified sample
-- [ ] Write up the delta (per-theme), judge agreement rate, failure analysis,
-      and honest limitations
+- [ ] *Full eval sweep, three arms on the same stratified sample:
+      (1) engine facts only, (2) engine + features (retrieval off),
+      (3) engine + features + RAG — so the RAG delta is not confounded with the
+      feature delta
+- [ ] Write up: per-theme deltas, judge agreement rate, failure analysis, honest
+      limitations (corpus level cap, theme-tag noise, judge bias)
 - [ ] Polish demo UX (explanation formatting, line playback on the board)
 - Done when: the headline number exists and the demo is shareable.
 
 ## Later / out of scope for v1
 
+- Client-side ONNX board-recognition model replacing the vision-LLM scan
 - Fine-tune a small model on GAMEKNOT and eval it against RAG
 - Full-game review mode (annotate every move of a PGN, chess.com game report)
 - Opening-theory corpus; user accounts; explanation history

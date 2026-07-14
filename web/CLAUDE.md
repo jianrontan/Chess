@@ -5,10 +5,13 @@ rooted at the repo top — run installs from the repo root (`pnpm install`), and
 via `pnpm --filter web <script>` or from this directory.
 
 ## Conventions
-- TypeScript strict; `@/*` maps to `src/*`.
+- TypeScript strict; `@/*` maps to `src/*`. **Never use `any`** (ESLint enforces
+  `no-explicit-any` as an error) — use `unknown` + narrowing, or proper types.
+- Tailwind 4 is CSS-first: the theme lives in `src/app/globals.css` (`@theme`
+  blocks); there is no tailwind.config.js. GitHub's language bar showing "CSS"
+  is this file — we are on Tailwind.
 - shadcn/ui components live in `src/components/ui/` — add new ones with
   `pnpm dlx shadcn@latest add <name>`, don't hand-write them.
-- Tailwind 4: theme/config lives in `src/app/globals.css` (CSS-first, no tailwind.config).
 - ESLint via `pnpm lint`; build check via `pnpm build`.
 
 ## Architecture rules
