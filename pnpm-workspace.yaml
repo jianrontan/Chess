@@ -2,5 +2,8 @@ packages:
   - web
 
 allowBuilds:
+  esbuild: true
   sharp: true
+  stockfish: true
   unrs-resolver: true
+  workerd: true

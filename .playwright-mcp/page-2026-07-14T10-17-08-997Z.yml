@@ -1,0 +1,18 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - heading "Chess Explanation Engine — Phase 1 proof" [level=1] [ref=e3]
+    - generic [ref=e4]:
+      - generic [ref=e5]:
+        - generic [ref=e6]: Environment
+        - generic [ref=e7]: Threading requires cross-origin isolation (COOP/COEP headers).
+      - generic [ref=e8]:
+        - paragraph [ref=e9]: "crossOriginIsolated: true"
+        - paragraph [ref=e10]: "Engine: lite · 8 threads · status: loading"
+        - paragraph [ref=e11]: "/api/health (same-origin Worker): ok"
+    - generic [ref=e12]:
+      - generic [ref=e13]:
+        - generic [ref=e14]: Top 3 moves from the start position
+        - generic [ref=e15]: MultiPV analysis, 5s fixed movetime, progressive.
+      - generic [ref=e16]:
+        - button "Analyze" [disabled]
+  - alert [ref=e17]

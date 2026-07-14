@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "chess-web",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-07-14",
+  "assets": {
+    "directory": "./out",
+    "binding": "ASSETS",
+    "not_found_handling": "404-page",
+    // Only /api/* invokes the Worker; everything else is served as a static
+    // asset directly (cheaper, and _headers applies COOP/COEP to the document).
+    "run_worker_first": ["/api/*"]
+  },
+  "observability": {
+    "enabled": true
+  }
+}

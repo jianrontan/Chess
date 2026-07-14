@@ -1,65 +1,141 @@
-import Image from "next/image";
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { EngineClient } from "@/lib/engine/client";
+import type { EngineLine } from "@/lib/engine/types";
+
+const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+function formatScore(line: EngineLine): string {
+  if (line.mate !== undefined) return `#${line.mate}`;
+  if (line.cp !== undefined) return (line.cp / 100).toFixed(2);
+  return "?";
+}
 
 export default function Home() {
+  const engineRef = useRef<EngineClient | null>(null);
+  const [status, setStatus] = useState<"loading" | "ready" | "analyzing" | "error">("loading");
+  const [error, setError] = useState<string>("");
+  const [isolated, setIsolated] = useState<boolean | null>(null);
+  const [threads, setThreads] = useState(0);
+  const [variant, setVariant] = useState("");
+  const [lines, setLines] = useState<EngineLine[]>([]);
+  const [health, setHealth] = useState<string>("checking…");
+
+  useEffect(() => {
+    const engine = new EngineClient();
+    engineRef.current = engine;
+    engine
+      .init()
+      .then(() => {
+        setIsolated(typeof crossOriginIsolated !== "undefined" && crossOriginIsolated);
+        setThreads(engine.info.threads);
+        setVariant(engine.info.variant);
+        setStatus("ready");
+      })
+      .catch((e: unknown) => {
+        setStatus("error");
+        setError(e instanceof Error ? e.message : String(e));
+      });
+
+    fetch("/api/health")
+      .then((r) => r.json())
+      .then((j: { ok?: boolean }) => setHealth(j.ok ? "ok" : "unexpected response"))
+      .catch(() => setHealth("unreachable"));
+
+    return () => engine.dispose();
+  }, []);
+
+  async function analyze() {
+    const engine = engineRef.current;
+    if (!engine) return;
+    setStatus("analyzing");
+    setLines([]);
+    try {
+      const result = await engine.analyze(START_FEN, {
+        multipv: 3,
+        movetimeMs: 5000,
+        onLines: setLines,
+      });
+      setLines(result.lines);
+      setStatus("ready");
+    } catch (e: unknown) {
+      setStatus("error");
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 p-8">
+      <h1 className="text-2xl font-semibold">Chess Explanation Engine — Phase 1 proof</h1>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Environment</CardTitle>
+          <CardDescription>
+            Threading requires cross-origin isolation (COOP/COEP headers).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-1 text-sm">
+          <p>
+            crossOriginIsolated:{" "}
+            <span className={isolated ? "text-green-600" : "text-red-600"}>
+              {isolated === null ? "…" : String(isolated)}
+            </span>
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+          <p>
+            Engine: {variant} · {threads} thread{threads === 1 ? "" : "s"} · status: {status}
+            {status === "error" ? ` (${error})` : ""}
+          </p>
+          <p>/api/health (same-origin Worker): {health}</p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Top 3 moves from the start position</CardTitle>
+          <CardDescription>MultiPV analysis, 5s fixed movetime, progressive.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Button onClick={analyze} disabled={status !== "ready"}>
+            {status === "analyzing" ? "Analyzing…" : "Analyze"}
+          </Button>
+          {lines.length > 0 && (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-muted-foreground">
+                  <th className="py-1 pr-4">#</th>
+                  <th className="py-1 pr-4">Move</th>
+                  <th className="py-1 pr-4">Eval</th>
+                  <th className="py-1 pr-4">Depth</th>
+                  <th className="py-1">Line</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lines.map((l) => (
+                  <tr key={l.multipv} className="border-t">
+                    <td className="py-1 pr-4">{l.multipv}</td>
+                    <td className="py-1 pr-4 font-mono">{l.pv[0]}</td>
+                    <td className="py-1 pr-4 font-mono">{formatScore(l)}</td>
+                    <td className="py-1 pr-4">{l.depth}</td>
+                    <td className="py-1 font-mono text-xs text-muted-foreground">
+                      {l.pv.slice(0, 8).join(" ")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </CardContent>
+      </Card>
+    </main>
   );
 }

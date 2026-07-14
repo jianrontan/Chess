@@ -33,6 +33,9 @@ yarn-error.log*
 .wrangler/
 .open-next/
 
+# Engine WASM builds (copied from node_modules by web/scripts/copy-engine.mjs)
+web/public/engine/
+
 # ---------- Python (pipeline) ----------
 __pycache__/
 *.py[cod]

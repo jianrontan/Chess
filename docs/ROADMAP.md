@@ -19,15 +19,18 @@ DECISIONS.md for the reasoning behind the starred (*) items.
 
 The demo becomes real: a position on screen, analyzed locally.
 
-- [ ] *Deploy hello-world FIRST: Next.js static export (`output: 'export'`) on
-      Workers Static Assets, COOP/COEP via `_headers`, prove threaded Stockfish
-      WASM + same-origin fetch to a stub Worker both work in production
-- [ ] *CI: GitHub Actions running ruff+pytest (pipeline) and lint+tsc+build (web)
+- [x] *Hello-world stack proven LOCALLY (wrangler dev + Playwright):
+      static export + `_headers` COOP/COEP → crossOriginIsolated=true, threaded
+      lite engine (8 threads) reached depth 23 in 5s MultiPV 3, same-origin
+      /api/health OK. Production deploy pending `wrangler login`.
+- [x] *CI: GitHub Actions running ruff+pytest (pipeline) and lint+tsc+build (web)
 - [ ] Board UI with `react-chessboard`: set up pieces, paste FEN, play moves
-- [ ] *Stockfish WASM (pin the `stockfish` npm package, SF 18): typed client
-      (init, `analyze(fen, {multipv: k})`, `gradeMove(fen, move)` via searchmoves);
-      crossOriginIsolated feature-detect with explicit single-thread lite fallback
-      (mobile: k=3, fixed movetime, show reached depth)
+- [x] *Stockfish WASM (`stockfish` npm, SF 18 lite ~7MB; full NNUE build is
+      108MB > the 25MiB asset limit, not shipped): typed client (init,
+      `analyze(fen, {multipv})`, `gradeMove(fen, move)` via searchmoves),
+      crossOriginIsolated feature-detect with single-thread lite fallback
+      (mobile UI budgets: k=3, fixed movetime, show reached depth — applied
+      when the board UI lands)
 - [ ] Analysis panel: top-k candidates with evals + PVs, shown as raw lines first
 - [ ] *Mode 2 skeleton: delta classification via win-percentage conversion
       (Lichess formula), not raw centipawns; searchmoves run must match the

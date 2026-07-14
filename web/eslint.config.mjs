@@ -17,6 +17,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Minified Stockfish builds copied from node_modules:
+    "public/engine/**",
+    // Local tooling output:
+    ".wrangler/**",
+    ".playwright-mcp/**",
   ]),
 ]);
 
