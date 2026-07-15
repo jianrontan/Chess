@@ -14,15 +14,26 @@ const CLASS_STYLE: Record<MoveClass, { label: string; className: string }> = {
 export function MoveVerdictCard({
   verdict,
   pending,
+  skipped,
 }: {
   verdict: MoveVerdict | null;
   pending: boolean;
+  skipped: boolean;
 }) {
   if (pending) {
     return (
       <Card>
         <CardContent className="pt-4 text-sm text-muted-foreground">
           Grading your move…
+        </CardContent>
+      </Card>
+    );
+  }
+  if (skipped) {
+    return (
+      <Card>
+        <CardContent className="pt-4 text-sm text-muted-foreground">
+          Move not graded — the position hadn&apos;t been analyzed yet.
         </CardContent>
       </Card>
     );

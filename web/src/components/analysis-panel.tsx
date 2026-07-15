@@ -9,8 +9,9 @@ import type { EngineLine } from "@/lib/engine/types";
  */
 function whiteScore(line: EngineLine, sideToMove: "w" | "b"): string {
   if (line.mate !== undefined) {
+    // White-centric: "#3" = White mates in 3, "#-3" = Black mates in 3.
     const mate = sideToMove === "w" ? line.mate : -line.mate;
-    return mate > 0 ? `#${mate}` : `#${mate}`;
+    return `#${mate}`;
   }
   if (line.cp !== undefined) {
     const cp = sideToMove === "w" ? line.cp : -line.cp;

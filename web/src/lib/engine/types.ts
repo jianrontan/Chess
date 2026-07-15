@@ -17,10 +17,22 @@ export interface AnalyzeOptions {
   multipv?: number;
   /** Fixed search time in milliseconds. Default 3000. */
   movetimeMs?: number;
+  /**
+   * Search to a fixed depth instead of a fixed time. Used by Mode 2 grading
+   * to match the baseline line's depth exactly (cross-depth deltas skew).
+   */
+  depth?: number;
   /** Restrict the search to these UCI moves (Mode 2 grading). */
   searchMoves?: string[];
   /** Progressive updates as depth climbs. */
   onLines?: (lines: EngineLine[]) => void;
+  /**
+   * Checked when the queued search is about to start; return true to skip
+   * it entirely (stale searches would otherwise burn their full movetime).
+   */
+  isCancelled?: () => boolean;
+  /** Called when the search actually starts running (left the queue). */
+  onStart?: () => void;
 }
 
 export interface AnalyzeResult {

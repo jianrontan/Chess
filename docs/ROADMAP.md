@@ -38,8 +38,10 @@ The demo becomes real: a position on screen, analyzed locally.
 - [x] Analysis panel: top-k candidates with evals + PVs, progressive display
 - [x] *Mode 2: win%-based classification (Lichess formula; grading.ts is
       pure + vitest-tested), instant verdict when the move is in the top k,
-      searchmoves at matched movetime otherwise; verdict card with
-      refutation line + better alternative
+      searchmoves at the baseline's reached DEPTH otherwise (matched depth,
+      not movetime — users move before analysis finishes); verdict card with
+      refutation line + better alternative; explicit "not graded" state;
+      baselines fen-tagged so a stale position can never grade a move
 - Done when: any legal position can be analyzed in the browser on the deployed
   site, threaded on desktop, with a working single-thread fallback.
 

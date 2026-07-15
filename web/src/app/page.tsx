@@ -32,6 +32,7 @@ export default function Home() {
   const [fenError, setFenError] = useState("");
   const [verdict, setVerdict] = useState<MoveVerdict | null>(null);
   const [gradePending, setGradePending] = useState(false);
+  const [gradeSkipped, setGradeSkipped] = useState(false);
   const gradeIdRef = useRef(0);
 
   const { engine, analysis, gradeMove } = useEngineAnalysis(fen, {
@@ -47,8 +48,10 @@ export default function Home() {
   function onPieceDrop({ sourceSquare, targetSquare }: PieceDropHandlerArgs): boolean {
     if (!targetSquare) return false;
     // Snapshot BEFORE the move: grading compares against this position.
+    // analysis.lines may still describe the PREVIOUS position (debounce
+    // window) — only use them if they are tagged with this exact FEN.
     const preFen = gameRef.current.fen();
-    const preLines = analysis.lines;
+    const preLines = analysis.fen === preFen ? analysis.lines : [];
     try {
       // TODO(ui): promotion picker; auto-queen for now.
       const move = gameRef.current.move({
@@ -63,10 +66,12 @@ export default function Home() {
       const moveUci = move.from + move.to + (move.promotion ?? "");
       const gradeId = ++gradeIdRef.current;
       setVerdict(null);
+      setGradeSkipped(false);
       setGradePending(true);
       gradeMove(preFen, moveUci, preLines).then((v) => {
         if (gradeIdRef.current !== gradeId) return; // a newer move superseded us
         setVerdict(v);
+        setGradeSkipped(v === null); // no baseline — say so instead of vanishing
         setGradePending(false);
       });
       return true;
@@ -78,6 +83,7 @@ export default function Home() {
   function clearVerdict() {
     gradeIdRef.current++;
     setVerdict(null);
+    setGradeSkipped(false);
     setGradePending(false);
   }
 
@@ -160,7 +166,7 @@ export default function Home() {
         </div>
 
         <div className="flex flex-col gap-4">
-          <MoveVerdictCard verdict={verdict} pending={gradePending} />
+          <MoveVerdictCard verdict={verdict} pending={gradePending} skipped={gradeSkipped} />
           <AnalysisPanel
             lines={analysis.lines}
             sideToMove={sideToMove}

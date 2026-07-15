@@ -112,13 +112,13 @@ export class EngineClient {
 
   /**
    * Evaluate a single move (Mode 2 grading) via a search restricted to it.
-   * Use the same movetimeMs as the MultiPV run it is graded against —
-   * a cross-depth delta is skewed (see ARCHITECTURE.md).
+   * Pass `depth` matching the baseline line's reached depth — a cross-depth
+   * delta is skewed (see ARCHITECTURE.md "Step 2b").
    */
   async gradeMove(
     fen: string,
     moveUci: string,
-    opts: Pick<AnalyzeOptions, "movetimeMs" | "onLines"> = {},
+    opts: Pick<AnalyzeOptions, "movetimeMs" | "depth" | "onLines" | "isCancelled" | "onStart"> = {},
   ): Promise<AnalyzeResult> {
     return this.analyze(fen, { ...opts, multipv: 1, searchMoves: [moveUci] });
   }
@@ -140,6 +140,8 @@ export class EngineClient {
 
   private async doAnalyze(fen: string, opts: AnalyzeOptions): Promise<AnalyzeResult> {
     if (!this.worker) throw new Error("engine not initialized");
+    if (opts.isCancelled?.()) throw new Error("cancelled");
+    opts.onStart?.();
     const multipv = opts.multipv ?? 3;
     const movetime = opts.movetimeMs ?? 3000;
 
@@ -157,14 +159,18 @@ export class EngineClient {
     });
 
     try {
-      const goParts = ["go", "movetime", String(movetime)];
+      // Fixed-depth mode (Mode 2 grading) vs fixed-movetime mode (analysis).
+      const goParts = opts.depth
+        ? ["go", "depth", String(opts.depth)]
+        : ["go", "movetime", String(movetime)];
       if (opts.searchMoves?.length) goParts.push("searchmoves", ...opts.searchMoves);
       this.send(goParts.join(" "));
 
-      const bestLine = await this.waitFor(
-        (l) => l.startsWith("bestmove"),
-        movetime + BESTMOVE_TIMEOUT_MARGIN_MS,
-      );
+      // Depth searches have no wall-clock bound; allow a generous window.
+      const timeoutMs = opts.depth
+        ? 60_000
+        : movetime + BESTMOVE_TIMEOUT_MARGIN_MS;
+      const bestLine = await this.waitFor((l) => l.startsWith("bestmove"), timeoutMs);
 
       // "bestmove (none)" = terminal position (mate/stalemate) or searchmoves
       // with no legal move.
