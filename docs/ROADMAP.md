@@ -35,10 +35,11 @@ The demo becomes real: a position on screen, analyzed locally.
       crossOriginIsolated feature-detect with single-thread lite fallback
       (mobile UI budgets: k=3, fixed movetime, show reached depth — applied
       when the board UI lands)
-- [ ] Analysis panel: top-k candidates with evals + PVs, shown as raw lines first
-- [ ] *Mode 2 skeleton: delta classification via win-percentage conversion
-      (Lichess formula), not raw centipawns; searchmoves run must match the
-      MultiPV run's movetime/depth
+- [x] Analysis panel: top-k candidates with evals + PVs, progressive display
+- [x] *Mode 2: win%-based classification (Lichess formula; grading.ts is
+      pure + vitest-tested), instant verdict when the move is in the top k,
+      searchmoves at matched movetime otherwise; verdict card with
+      refutation line + better alternative
 - Done when: any legal position can be analyzed in the browser on the deployed
   site, threaded on desktop, with a working single-thread fallback.
 

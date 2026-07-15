@@ -20,6 +20,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter web lint
+      - run: pnpm --filter web test
       - run: pnpm --filter web exec tsc --noEmit
       - run: pnpm --filter web exec tsc -p worker/tsconfig.json
       - run: pnpm --filter web build

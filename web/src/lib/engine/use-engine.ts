@@ -9,8 +9,9 @@
  * can still arrive after the position moved on).
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { EngineClient } from "./client";
+import { gradePlayedMove, type MoveVerdict } from "./grading";
 import type { EngineInfo, EngineLine } from "./types";
 
 const DEBOUNCE_MS = 250;
@@ -32,7 +33,15 @@ export interface AnalysisState {
 export function useEngineAnalysis(
   fen: string,
   opts: { multipv?: number; movetimeMs?: number } = {},
-): { engine: EngineState; analysis: AnalysisState } {
+): {
+  engine: EngineState;
+  analysis: AnalysisState;
+  gradeMove: (
+    preFen: string,
+    moveUci: string,
+    preLines: EngineLine[],
+  ) => Promise<MoveVerdict | null>;
+} {
   const clientRef = useRef<EngineClient | null>(null);
   const generationRef = useRef(0);
   const [engine, setEngine] = useState<EngineState>({
@@ -122,5 +131,36 @@ export function useEngineAnalysis(
     return () => clearTimeout(timer);
   }, [fen, engine.status, multipv, movetimeMs]);
 
-  return { engine, analysis };
+  /**
+   * Grade a move played from `preFen` (Mode 2). Reuses the pre-move
+   * analysis when the move was among the top-k lines (instant); otherwise
+   * runs a searchmoves query at the SAME movetime as the analysis run so
+   * the delta is not cross-depth (see ARCHITECTURE.md "Step 2b").
+   */
+  const gradeMove = useCallback(
+    async (
+      preFen: string,
+      moveUci: string,
+      preLines: EngineLine[],
+    ): Promise<MoveVerdict | null> => {
+      const client = clientRef.current;
+      const bestLine = preLines[0];
+      if (!client || !bestLine) return null; // no baseline yet — skip grading
+
+      const known = preLines.find((l) => l.pv[0] === moveUci);
+      if (known) return gradePlayedMove(bestLine, known);
+
+      try {
+        const result = await client.gradeMove(preFen, moveUci, { movetimeMs });
+        const playedLine = result.lines[0];
+        if (!playedLine) return null; // terminal position or illegal restriction
+        return gradePlayedMove(bestLine, playedLine);
+      } catch {
+        return null; // disposed mid-search
+      }
+    },
+    [movetimeMs],
+  );
+
+  return { engine, analysis, gradeMove };
 }

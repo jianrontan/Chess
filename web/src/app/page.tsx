@@ -6,6 +6,8 @@ import { Chessboard, type PieceDropHandlerArgs } from "react-chessboard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { AnalysisPanel } from "@/components/analysis-panel";
+import { MoveVerdictCard } from "@/components/move-verdict";
+import type { MoveVerdict } from "@/lib/engine/grading";
 import { useEngineAnalysis } from "@/lib/engine/use-engine";
 
 const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -28,8 +30,14 @@ export default function Home() {
   const [orientation, setOrientation] = useState<"white" | "black">("white");
   const [fenInput, setFenInput] = useState("");
   const [fenError, setFenError] = useState("");
+  const [verdict, setVerdict] = useState<MoveVerdict | null>(null);
+  const [gradePending, setGradePending] = useState(false);
+  const gradeIdRef = useRef(0);
 
-  const { engine, analysis } = useEngineAnalysis(fen, { multipv: 3, movetimeMs: 5000 });
+  const { engine, analysis, gradeMove } = useEngineAnalysis(fen, {
+    multipv: 3,
+    movetimeMs: 5000,
+  });
 
   const sideToMove = useMemo(() => (fen.split(" ")[1] === "b" ? "b" : "w"), [fen]);
   // Derived from FEN alone (render must not read the ref). Note: threefold
@@ -38,16 +46,39 @@ export default function Home() {
 
   function onPieceDrop({ sourceSquare, targetSquare }: PieceDropHandlerArgs): boolean {
     if (!targetSquare) return false;
+    // Snapshot BEFORE the move: grading compares against this position.
+    const preFen = gameRef.current.fen();
+    const preLines = analysis.lines;
     try {
-      // TODO(mode-2): grade the played move against the pre-move analysis.
       // TODO(ui): promotion picker; auto-queen for now.
-      gameRef.current.move({ from: sourceSquare, to: targetSquare, promotion: "q" });
+      const move = gameRef.current.move({
+        from: sourceSquare,
+        to: targetSquare,
+        promotion: "q",
+      });
       setFen(gameRef.current.fen());
       setFenError("");
+
+      // Mode 2: grade the played move (instant if it was in the top k).
+      const moveUci = move.from + move.to + (move.promotion ?? "");
+      const gradeId = ++gradeIdRef.current;
+      setVerdict(null);
+      setGradePending(true);
+      gradeMove(preFen, moveUci, preLines).then((v) => {
+        if (gradeIdRef.current !== gradeId) return; // a newer move superseded us
+        setVerdict(v);
+        setGradePending(false);
+      });
       return true;
     } catch {
       return false; // illegal — board reverts
     }
+  }
+
+  function clearVerdict() {
+    gradeIdRef.current++;
+    setVerdict(null);
+    setGradePending(false);
   }
 
   function loadFen() {
@@ -58,6 +89,7 @@ export default function Home() {
       setFen(gameRef.current.fen());
       setFenInput("");
       setFenError("");
+      clearVerdict();
     } catch (e: unknown) {
       setFenError(e instanceof Error ? e.message : "Invalid FEN");
     }
@@ -67,11 +99,13 @@ export default function Home() {
     gameRef.current = new Chess(START_FEN);
     setFen(START_FEN);
     setFenError("");
+    clearVerdict();
   }
 
   function undo() {
     gameRef.current.undo();
     setFen(gameRef.current.fen());
+    clearVerdict();
   }
 
   return (
@@ -126,6 +160,7 @@ export default function Home() {
         </div>
 
         <div className="flex flex-col gap-4">
+          <MoveVerdictCard verdict={verdict} pending={gradePending} />
           <AnalysisPanel
             lines={analysis.lines}
             sideToMove={sideToMove}
