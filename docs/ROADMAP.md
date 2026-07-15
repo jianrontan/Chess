@@ -27,8 +27,11 @@ The demo becomes real: a position on screen, analyzed locally.
 - [x] Board UI (`react-chessboard` v5 + chess.js): play legal moves, paste FEN
       with validation, undo/reset/flip, auto-analysis on position change
       (debounced, stale-result guarded), White-centric eval display.
-      Deferred: piece-editor mode (needed anyway for image-to-FEN confirm),
-      promotion picker (auto-queen for now)
+      Deferred: promotion picker (auto-queen for now)
+- [x] Board editor mode: spare-piece palette, free placement, drag-off to
+      remove, side-to-move toggle, castling derived from placement, validated
+      apply (rejects missing kings / impossible checks). Reusable for the
+      image-to-FEN confirm screen in Phase 2.
 - [x] *Stockfish WASM (`stockfish` npm, SF 18 lite ~7MB; full NNUE build is
       108MB > the 25MiB asset limit, not shipped): typed client (init,
       `analyze(fen, {multipv})`, `gradeMove(fen, move)` via searchmoves),

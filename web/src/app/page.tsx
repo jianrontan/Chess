@@ -6,6 +6,7 @@ import { Chessboard, type PieceDropHandlerArgs } from "react-chessboard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { AnalysisPanel } from "@/components/analysis-panel";
+import { BoardEditor } from "@/components/board-editor";
 import { MoveVerdictCard } from "@/components/move-verdict";
 import type { MoveVerdict } from "@/lib/engine/grading";
 import { useEngineAnalysis } from "@/lib/engine/use-engine";
@@ -33,6 +34,7 @@ export default function Home() {
   const [verdict, setVerdict] = useState<MoveVerdict | null>(null);
   const [gradePending, setGradePending] = useState(false);
   const [gradeSkipped, setGradeSkipped] = useState(false);
+  const [editing, setEditing] = useState(false);
   const gradeIdRef = useRef(0);
 
   const { engine, analysis, gradeMove } = useEngineAnalysis(fen, {
@@ -120,49 +122,68 @@ export default function Home() {
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,480px)_1fr]">
         <div className="flex flex-col gap-4">
-          <Chessboard
-            options={{
-              position: fen,
-              onPieceDrop,
-              boardOrientation: orientation,
-              id: "main-board",
-            }}
-          />
-
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={reset}>
-              Reset
-            </Button>
-            <Button variant="outline" size="sm" onClick={undo}>
-              Undo
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setOrientation((o) => (o === "white" ? "black" : "white"))}
-            >
-              Flip
-            </Button>
-            <span className="ml-auto self-center text-sm text-muted-foreground">
-              {overText ?? `${sideToMove === "w" ? "White" : "Black"} to move`}
-            </span>
-          </div>
-
-          <div className="flex gap-2">
-            <input
-              className="min-w-0 flex-1 rounded-md border bg-transparent px-3 py-1.5 font-mono text-xs"
-              placeholder="Paste a FEN…"
-              value={fenInput}
-              onChange={(e) => setFenInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") loadFen();
+          {editing ? (
+            <BoardEditor
+              initialFen={fen}
+              onApply={(newFen) => {
+                gameRef.current = new Chess(newFen);
+                setFen(newFen);
+                setFenError("");
+                clearVerdict();
+                setEditing(false);
               }}
+              onCancel={() => setEditing(false)}
             />
-            <Button size="sm" onClick={loadFen}>
-              Load
-            </Button>
-          </div>
-          {fenError && <p className="text-xs text-red-600">{fenError}</p>}
+          ) : (
+            <>
+              <Chessboard
+                options={{
+                  position: fen,
+                  onPieceDrop,
+                  boardOrientation: orientation,
+                  id: "main-board",
+                }}
+              />
+
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" size="sm" onClick={reset}>
+                  Reset
+                </Button>
+                <Button variant="outline" size="sm" onClick={undo}>
+                  Undo
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setOrientation((o) => (o === "white" ? "black" : "white"))}
+                >
+                  Flip
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+                  Edit board
+                </Button>
+                <span className="ml-auto self-center text-sm text-muted-foreground">
+                  {overText ?? `${sideToMove === "w" ? "White" : "Black"} to move`}
+                </span>
+              </div>
+
+              <div className="flex gap-2">
+                <input
+                  className="min-w-0 flex-1 rounded-md border bg-transparent px-3 py-1.5 font-mono text-xs"
+                  placeholder="Paste a FEN…"
+                  value={fenInput}
+                  onChange={(e) => setFenInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") loadFen();
+                  }}
+                />
+                <Button size="sm" onClick={loadFen}>
+                  Load
+                </Button>
+              </div>
+              {fenError && <p className="text-xs text-red-600">{fenError}</p>}
+            </>
+          )}
         </div>
 
         <div className="flex flex-col gap-4">
