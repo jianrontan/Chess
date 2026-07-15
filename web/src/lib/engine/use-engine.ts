@@ -176,9 +176,10 @@ export function useEngineAnalysis(
       const client = clientRef.current;
       const bestLine = preLines[0];
       if (!client || !bestLine) return null; // no baseline — caller shows "not graded"
+      const mover: "w" | "b" = preFen.split(" ")[1] === "b" ? "b" : "w";
 
       const known = preLines.find((l) => l.pv[0] === moveUci);
-      if (known) return gradePlayedMove(bestLine, known);
+      if (known) return gradePlayedMove(bestLine, known, mover);
 
       try {
         const result = await client.gradeMove(preFen, moveUci, {
@@ -186,7 +187,7 @@ export function useEngineAnalysis(
         });
         const playedLine = result.lines[0];
         if (!playedLine) return null; // terminal position or illegal restriction
-        return gradePlayedMove(bestLine, playedLine);
+        return gradePlayedMove(bestLine, playedLine, mover);
       } catch {
         return null; // disposed mid-search
       }

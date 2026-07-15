@@ -53,12 +53,15 @@ export function MoveVerdictCard({
             {style.label}
           </span>
           <span className="font-mono font-medium">{played}</span>
-          {verdict.winPctDrop >= 1 && (
-            <span className="text-muted-foreground">
-              −{verdict.winPctDrop.toFixed(0)}% win chance
-            </span>
-          )}
         </div>
+        {verdict.winPctDrop >= 1 && (
+          <p className="text-xs text-muted-foreground">
+            {verdict.mover === "w" ? "White" : "Black"}&apos;s winning chances:{" "}
+            {verdict.winPctBefore.toFixed(0)}% →{" "}
+            {verdict.winPctAfter.toFixed(0)}% (best move kept it at{" "}
+            {verdict.winPctBefore.toFixed(0)}%)
+          </p>
+        )}
         {refutation.length > 0 && showAlternative && (
           <p className="text-xs text-muted-foreground">
             Punished by:{" "}

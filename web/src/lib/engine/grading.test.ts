@@ -46,37 +46,37 @@ describe("gradePlayedMove", () => {
 
   it("classifies the engine's own move as best regardless of noise", () => {
     const played = line({ cp: 30, pv: ["e2e4", "c7c5"] });
-    expect(gradePlayedMove(best, played).moveClass).toBe("best");
+    expect(gradePlayedMove(best, played, "w").moveClass).toBe("best");
   });
 
   it("small drop is good", () => {
     const played = line({ cp: 10, pv: ["g1f3"] });
-    const v = gradePlayedMove(best, played);
+    const v = gradePlayedMove(best, played, "w");
     expect(v.moveClass).toBe("good");
     expect(v.winPctDrop).toBeLessThan(10);
   });
 
   it("hanging the queen is a blunder", () => {
     const played = line({ cp: -900, pv: ["d1g4"] });
-    expect(gradePlayedMove(best, played).moveClass).toBe("blunder");
+    expect(gradePlayedMove(best, played, "w").moveClass).toBe("blunder");
   });
 
   it("missing a forced mate for a drawish eval is a blunder", () => {
     const mateBest = line({ mate: 2, pv: ["d1h5"] });
     const played = line({ cp: 0, pv: ["a2a3"] });
-    const v = gradePlayedMove(mateBest, played);
+    const v = gradePlayedMove(mateBest, played, "w");
     expect(v.moveClass).toBe("blunder");
     expect(v.winPctDrop).toBeCloseTo(50);
   });
 
   it("walking into mate is a blunder", () => {
     const played = line({ mate: -4, pv: ["f2f3"] });
-    expect(gradePlayedMove(best, played).moveClass).toBe("blunder");
+    expect(gradePlayedMove(best, played, "w").moveClass).toBe("blunder");
   });
 
   it("clamps a better-than-best played move to zero drop", () => {
     const played = line({ cp: 60, pv: ["d2d4"] });
-    const v = gradePlayedMove(best, played);
+    const v = gradePlayedMove(best, played, "w");
     expect(v.winPctDrop).toBe(0);
     expect(v.moveClass).toBe("good");
   });
@@ -84,6 +84,6 @@ describe("gradePlayedMove", () => {
   it("mid-range drop is a mistake", () => {
     // 35cp -> -250cp is a ~25 win% drop
     const played = line({ cp: -250, pv: ["b2b4"] });
-    expect(gradePlayedMove(best, played).moveClass).toBe("mistake");
+    expect(gradePlayedMove(best, played, "w").moveClass).toBe("mistake");
   });
 });

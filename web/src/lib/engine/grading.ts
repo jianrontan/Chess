@@ -34,6 +34,12 @@ const THRESHOLDS: ReadonlyArray<[number, MoveClass]> = [
 
 export interface MoveVerdict {
   moveClass: MoveClass;
+  /** Side that played the graded move. */
+  mover: "w" | "b";
+  /** Mover's win% had they played the best move. */
+  winPctBefore: number;
+  /** Mover's win% after the move actually played. */
+  winPctAfter: number;
   /** Win% given up versus the best move (≥ 0; small negatives clamped). */
   winPctDrop: number;
   /** The played move's own line (eval + expected continuation). */
@@ -44,10 +50,17 @@ export interface MoveVerdict {
 
 /**
  * Grade a played move against the best line of the same position.
- * `playedLine.pv[0]` must be the played move (UCI).
+ * `playedLine.pv[0]` must be the played move (UCI); `mover` is the side
+ * to move in that position.
  */
-export function gradePlayedMove(bestLine: EngineLine, playedLine: EngineLine): MoveVerdict {
-  const drop = Math.max(0, lineWinPct(bestLine) - lineWinPct(playedLine));
+export function gradePlayedMove(
+  bestLine: EngineLine,
+  playedLine: EngineLine,
+  mover: "w" | "b",
+): MoveVerdict {
+  const winPctBefore = lineWinPct(bestLine);
+  const winPctAfter = Math.min(winPctBefore, lineWinPct(playedLine));
+  const drop = winPctBefore - winPctAfter;
 
   let moveClass: MoveClass = "good";
   if (playedLine.pv[0] === bestLine.pv[0]) {
@@ -60,5 +73,5 @@ export function gradePlayedMove(bestLine: EngineLine, playedLine: EngineLine): M
       }
     }
   }
-  return { moveClass, winPctDrop: drop, playedLine, bestLine };
+  return { moveClass, mover, winPctBefore, winPctAfter, winPctDrop: drop, playedLine, bestLine };
 }
