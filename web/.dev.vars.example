@@ -1,0 +1,8 @@
+# Local Worker secrets — copy to web/.dev.vars (git-ignored) and fill in.
+# In production, set via: npx wrangler secret put ANTHROPIC_API_KEY
+# The key must NEVER appear in browser code, NEXT_PUBLIC_* vars, or git.
+ANTHROPIC_API_KEY=sk-ant-...
+
+# Optional overrides:
+# EXPLAIN_PROVIDER=fake      # force the mock provider even with a key
+# EXPLAIN_MODEL=claude-haiku-4-5

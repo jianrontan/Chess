@@ -3,6 +3,9 @@
   "name": "chess-web",
   "main": "worker/index.ts",
   "compatibility_date": "2026-07-14",
+  // The Anthropic SDK imports node:fs/node:path (credential-chain code that
+  // is unused at runtime here, but must resolve at startup).
+  "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "directory": "./out",
     "binding": "ASSETS",

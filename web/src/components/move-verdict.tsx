@@ -1,5 +1,6 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import type { MoveClass, MoveVerdict } from "@/lib/engine/grading";
 
@@ -15,10 +16,12 @@ export function MoveVerdictCard({
   verdict,
   pending,
   skipped,
+  onExplain,
 }: {
   verdict: MoveVerdict | null;
   pending: boolean;
   skipped: boolean;
+  onExplain?: () => void;
 }) {
   if (pending) {
     return (
@@ -74,6 +77,11 @@ export function MoveVerdictCard({
             <span className="font-mono font-medium">{verdict.bestLine.pv[0]}</span>
             <span className="font-mono"> {verdict.bestLine.pv.slice(1, 5).join(" ")}</span>
           </p>
+        )}
+        {onExplain && (
+          <Button variant="outline" size="sm" onClick={onExplain}>
+            Explain this move
+          </Button>
         )}
       </CardContent>
     </Card>

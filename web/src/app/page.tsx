@@ -7,9 +7,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { AnalysisPanel } from "@/components/analysis-panel";
 import { BoardEditor } from "@/components/board-editor";
+import { ExplanationCard } from "@/components/explanation-card";
 import { MoveVerdictCard } from "@/components/move-verdict";
 import type { MoveVerdict } from "@/lib/engine/grading";
 import { useEngineAnalysis } from "@/lib/engine/use-engine";
+import {
+  candidatesRequestBody,
+  gradeRequestBody,
+  streamExplanation,
+  type ExplainState,
+} from "@/lib/explain";
 
 const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
@@ -36,6 +43,11 @@ export default function Home() {
   const [gradeSkipped, setGradeSkipped] = useState(false);
   const [editing, setEditing] = useState(false);
   const gradeIdRef = useRef(0);
+  // Position the last verdict was graded from — the grade explanation
+  // must be requested against THAT fen, not the current one.
+  const [gradedFen, setGradedFen] = useState<string | null>(null);
+  const [explanation, setExplanation] = useState<ExplainState | null>(null);
+  const explainIdRef = useRef(0);
 
   const { engine, analysis, gradeMove } = useEngineAnalysis(fen, {
     multipv: 3,
@@ -73,20 +85,53 @@ export default function Home() {
       gradeMove(preFen, moveUci, preLines).then((v) => {
         if (gradeIdRef.current !== gradeId) return; // a newer move superseded us
         setVerdict(v);
+        setGradedFen(v ? preFen : null);
         setGradeSkipped(v === null); // no baseline — say so instead of vanishing
         setGradePending(false);
       });
+      clearExplanation();
       return true;
     } catch {
       return false; // illegal — board reverts
     }
   }
 
+  function clearExplanation() {
+    explainIdRef.current++; // a stale in-flight stream stops writing state
+    setExplanation(null);
+  }
+
   function clearVerdict() {
     gradeIdRef.current++;
     setVerdict(null);
+    setGradedFen(null);
     setGradeSkipped(false);
     setGradePending(false);
+    clearExplanation();
+  }
+
+  async function runExplain(body: unknown) {
+    const id = ++explainIdRef.current;
+    setExplanation({ text: "", streaming: true, error: "" });
+    try {
+      let text = "";
+      for await (const chunk of streamExplanation(body)) {
+        if (explainIdRef.current !== id) return; // superseded — stop consuming
+        text += chunk;
+        setExplanation({ text, streaming: true, error: "" });
+      }
+      if (explainIdRef.current === id) {
+        setExplanation({ text, streaming: false, error: "" });
+      }
+    } catch (e: unknown) {
+      if (explainIdRef.current === id) {
+        setExplanation({
+          text: "",
+          streaming: false,
+          error: e instanceof Error ? e.message : "request failed",
+        });
+      }
+    }
   }
 
   function loadFen() {
@@ -187,7 +232,16 @@ export default function Home() {
         </div>
 
         <div className="flex flex-col gap-4">
-          <MoveVerdictCard verdict={verdict} pending={gradePending} skipped={gradeSkipped} />
+          <MoveVerdictCard
+            verdict={verdict}
+            pending={gradePending}
+            skipped={gradeSkipped}
+            onExplain={
+              verdict && gradedFen
+                ? () => runExplain(gradeRequestBody(gradedFen, verdict))
+                : undefined
+            }
+          />
           <AnalysisPanel
             lines={analysis.lines}
             sideToMove={sideToMove}
@@ -195,6 +249,18 @@ export default function Home() {
             depth={analysis.depth}
             gameOverText={overText}
           />
+          <div>
+            <Button
+              variant="outline"
+              size="sm"
+              // Lines must describe the CURRENT position (analysis.fen tag).
+              disabled={analysis.fen !== fen || analysis.lines.length === 0}
+              onClick={() => runExplain(candidatesRequestBody(fen, analysis.lines))}
+            >
+              Explain position
+            </Button>
+          </div>
+          <ExplanationCard state={explanation} />
 
           <Card>
             <CardContent className="pt-4 text-xs text-muted-foreground">
