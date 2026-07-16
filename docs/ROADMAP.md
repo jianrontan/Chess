@@ -77,7 +77,11 @@ The demo becomes real: a position on screen, analyzed locally.
 
 The differentiator. Build it before RAG so RAG has a scoreboard on arrival.
 
-- [ ] Download + parse Lichess puzzle CSV; stratified sampler (theme x rating band)
+- [x] Parse Lichess puzzle CSV (zst streaming, FEN-before-setup-move handled,
+      legality replay on everything sampled) + stratified sampler (theme x
+      rating band, per-cell reservoir, quality filters, seeded/deterministic);
+      `python -m pipeline.sample_puzzles` writes a validated JSONL sample.
+      Remaining: run it against the full ~6M-row dump (homelab download).
 - [ ] Runner: apply the setup move first (CSV FEN is BEFORE the opponent's move),
       then run the serve pipeline per puzzle (native Stockfish, not WASM);
       record prompt version + model ID + engine depth/movetime in every sweep

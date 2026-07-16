@@ -1,0 +1,7 @@
+PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,OpeningTags
+fx001,r1bqkbnr/pppp1ppp/2n5/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 3 3,g8f6 h5f7,600,75,92,5000,mate mateIn1 oneMove opening,https://lichess.org/fx001#6,Italian_Game
+fx002,6k1/5ppp/8/r7/8/8/5PPP/4R1K1 b - - 0 30,a5a2 e1e8,1000,80,88,3000,backRankMate mate mateIn1 endgame oneMove,https://lichess.org/fx002#60,
+fx003,3qk3/pp3p1p/8/8/4N3/8/PP3PPP/6K1 b - - 0 25,d8d5 e4f6 e8e7 f6d5,1500,85,90,2500,fork short crushing middlegame,https://lichess.org/fx003#50,
+fx004,3k4/pp6/8/8/5q2/8/5PPP/2B3K1 b - - 0 30,f4f6 c1g5,1400,90,85,1200,pin short crushing endgame,https://lichess.org/fx004#60,
+fx005,rnbqkbnr/pppp1ppp/8/4p3/8/5P2/PPPPP1PP/RNBQKBNR w KQkq - 0 2,g2g4 d8h4,800,76,95,8000,mate mateIn1 oneMove opening,https://lichess.org/fx005/black#3,Bird_Opening
+fx006,4q3/1pp5/4k3/8/8/8/1PP3K1/R7 b - - 0 30,e6e5 a1e1 e5f4 e1e8,2000,82,87,900,skewer crushing endgame,https://lichess.org/fx006#60,
