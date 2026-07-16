@@ -126,3 +126,69 @@ cap. Move grading at ~3s is compatible with the matched-depth rule because a
 single-move `searchmoves` to the top-k run's depth is far cheaper than the full
 MultiPV search. One-time costs (eval sweeps, embedding) sit outside the monthly
 cap.
+
+## 2026-07-16 — /api/explain design (Phase 2 start, mocked provider)
+
+**Decided:**
+- **Prompt template is a plain JSON file at repo root** (`prompts/explain.v1.json`):
+  the Worker imports it as a JSON module (esbuild native, no wrangler rules) and
+  the Python harness will `json.load` the same file — one artifact, two
+  consumers, zero copies. Versions are new files (`explain.v2.json`), never
+  in-place edits, so eval sweeps can pin what they measured.
+- **Provider abstraction = an async iterable of text chunks** (`ExplainProvider`).
+  The Worker streams those chunks as a plain `text/plain` chunked response —
+  NOT a raw SSE pass-through of the vendor's wire format, which would leak the
+  provider into the client contract. The UI just appends decoded chunks.
+  Anthropic (Haiku 4.5, `@anthropic-ai/sdk`) and a deterministic fake are the
+  two implementations; no API key → fake, so the whole path works today and in
+  CI. `EXPLAIN_PROVIDER=fake` / `EXPLAIN_MODEL` env overrides.
+- **Trust chain for client input:** structural validation + clamps
+  (`schema.ts`: k≤5, PV≤12 moves, cp/mate/win% clamped, 16KB body cap, UCI
+  regex) → legality gate (`prompt.ts` replays every PV with chess.js; SAN
+  conversion doubles as the proof of legality) → the prompt is assembled only
+  from our own re-serialization. No client string is ever forwarded verbatim.
+- **Server-controlled output cap:** `max_tokens` 512, not raisable by clients.
+- Evals rendered White-centric in the prompt (UCI cp/mate are side-to-move
+  relative) and phrased in plain terms, since the raw numbers were exactly what
+  confused users in the verdict card.
+
+**Deferred (before public, unchanged):** Turnstile, per-IP rate limiting,
+provider spend cap. Also found+fixed: root `.gitignore` had an inline comment
+on the `.dev.vars` line — gitignore has no inline comments, so the secrets file
+was silently NOT ignored.
+
+## 2026-07-16 — GAMEKNOT corpus is out for the public index (licensing spike)
+
+**Finding (research agent, sources in the spike report):** the ACL 2018 repo
+ships a crawler, not data — no LICENSE file, no hosted copy of the 298k pairs;
+you must re-scrape gameknot.com. GameKnot's EULA takes **exclusive assignment
+of all user comments** ("all rights of any kind or nature throughout the
+universe"), there is no public license, and the site opted out of Common Crawl.
+Building a private index from scraped text is defensible research practice
+(hiQ, Authors Guild v. Google), but **displaying retrieved snippets on a public
+demo site is unlicensed redistribution** — the one posture a portfolio project
+should not take.
+
+**Decided:**
+1. **Public Vectorize index = clean-licensed sources only:** Chess Stack
+   Exchange dumps (CC BY-SA 4.0 — verbatim quoting OK with attribution+link,
+   which *strengthens* the traceability story), public-domain annotated
+   classics (Capablanca *Chess Fundamentals* 1921 on Gutenberg; Ed. Lasker
+   *Chess Strategy*; pre-1931 US rule — note Chernev is NOT PD), optionally
+   Wikibooks openings (CC BY-SA) as a small supplement. Estimated 4–8k chunks —
+   fits the Vectorize free tier.
+2. **Lichess studies** (API export verified live; no bulk dump; user-copyrighted,
+   no public license) as the quality upgrade under a **retrieve-and-ground,
+   never-quote** policy: comments inform the LLM, raw text is never displayed,
+   source-study URL kept internally for provenance.
+3. **GAMEKNOT offline-eval-only, if at all** — usable to benchmark against the
+   literature, never in the public index. If the with/without-RAG delta shows
+   on the clean corpus, drop GAMEKNOT entirely.
+
+**Rejected:** Hugging Face `Waterhorse/chess_data` re-hosting (inherits the
+GameKnot problem, no real license grant); `Icannos/chess_studies` CC0 tag
+(uploader can't re-license others' text); PGN Mentor (no license statement,
+bare game scores anyway).
+
+**Consequence:** CLAUDE.md/ARCHITECTURE still name GAMEKNOT as the RAG corpus —
+update pending user sign-off on the corpus swap.

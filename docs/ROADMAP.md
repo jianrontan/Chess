@@ -50,17 +50,20 @@ The demo becomes real: a position on screen, analyzed locally.
 
 ## Phase 2 — Explanations, ungrounded (LLM, no RAG yet)
 
-- [ ] Cloudflare Worker: `/api/explain` endpoint, provider-agnostic LLM client,
-      API key in Worker env (`.dev.vars` locally), same-origin route under the
-      app's domain
+- [x] Cloudflare Worker: `/api/explain` endpoint, provider-agnostic LLM client
+      (Anthropic + deterministic fake; fake runs until a key exists), API key in
+      Worker env (`.dev.vars` locally), same-origin route under the app's domain
 - [ ] *Abuse protection BEFORE the endpoint is public: Turnstile + per-IP rate
-      limit + payload caps (k≤5, PV length, image size) + `max_tokens` cap +
-      provider-side monthly spend limit
-- [ ] *Worker validates client input: replay candidate/PV moves for legality
-      (chessops), clamp evals, treat evals as "client-reported"
-- [ ] *Prompt v1 as a versioned template file consumed by BOTH the Worker and the
-      (future) eval harness — never two copies
-- [ ] Streaming response into the UI (pipe the SSE body through; don't buffer)
+      limit + provider-side monthly spend limit (payload caps + `max_tokens`
+      cap already shipped with the endpoint)
+- [x] *Worker validates client input: replay candidate/PV moves for legality
+      (chess.js), clamp evals, payload caps (k≤5, PV≤12, 16KB body), treat
+      evals as "client-reported"; prompt built only from our re-serialization
+- [x] *Prompt v1 as a versioned template file consumed by BOTH the Worker and the
+      (future) eval harness — never two copies (`prompts/explain.v1.json`)
+- [x] Streaming response into the UI (provider chunks → chunked text response →
+      streamed into the explanation card; "Explain position" + "Explain this
+      move" buttons)
 - [ ] Image-to-FEN v1: vision-LLM call via the Worker; confirm screen shows the
       transcribed board BESIDE the uploaded image with click-to-fix squares,
       one-click orientation flip, and explicit side-to-move + castling inputs
@@ -97,10 +100,14 @@ The differentiator. Build it before RAG so RAG has a scoreboard on arrival.
       identical feature sets) tested in pytest AND vitest
 - [ ] Feature extractor in `pipeline/` (python-chess) + TS mirror in the Worker,
       both conforming to the spec
-- [ ] *GAMEKNOT licensing/provenance spike + fallback corpus identified (e.g.
-      permissively licensed annotated PGNs, Lichess studies) BEFORE cleaning code
-- [ ] GAMEKNOT corpus: download, clean, filter categories, position-key each
-      comment (replay games), chunk
+- [x] *GAMEKNOT licensing/provenance spike DONE — outcome: GAMEKNOT is
+      unusable for the public index (no license, EULA owns all comments;
+      offline-eval-only at most). See DECISIONS.md 2026-07-16.
+- [ ] Corpus (pending user sign-off on the swap): Chess Stack Exchange dump
+      (CC BY-SA, quotable with attribution) + public-domain annotated classics
+      (+ optional Wikibooks openings); Lichess studies via API export under a
+      retrieve-and-ground/never-quote policy. Download, clean, position-key,
+      chunk.
 - [ ] *Symmetric retrieval: embed the feature-summary string per chunk (prose as
       metadata payload); Vectorize metadata tag pre-filter + vector re-rank
 - [ ] *Pin ONE embedding model available in both planes (bge-base-en-v1.5 768d /
