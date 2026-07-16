@@ -21,7 +21,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"%CLAUDE_PROJECT_DIR%/.claude/hooks/post_edit.py\"",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/post_edit.py\"",
             "timeout": 90
           }
         ]
@@ -32,7 +32,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"%CLAUDE_PROJECT_DIR%/.claude/hooks/stop_check.py\"",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/stop_check.py\"",
             "timeout": 300
           }
         ]

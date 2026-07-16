@@ -2,7 +2,10 @@
 .env
 .env.*
 !.env.example
-.dev.vars          # Cloudflare Workers local secrets
+# Cloudflare Workers local secrets (gitignore has no inline comments!)
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
 
 # ---------- Private docs (personal notes, never committed) ----------
 docs/private/*
