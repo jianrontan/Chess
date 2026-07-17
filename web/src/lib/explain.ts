@@ -9,6 +9,7 @@
 
 import type { MoveVerdict } from "@/lib/engine/grading";
 import type { EngineLine } from "@/lib/engine/types";
+import { getTurnstileToken } from "@/lib/turnstile";
 
 export interface ExplainState {
   text: string;
@@ -39,34 +40,40 @@ export function gradeRequestBody(preFen: string, v: MoveVerdict): unknown {
   };
 }
 
+/** POST with a fresh single-use Turnstile token attached. */
+export async function postWithTurnstile(url: string, body: string): Promise<Response> {
+  const token = await getTurnstileToken();
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (token) headers["x-turnstile-token"] = token;
+  return fetch(url, { method: "POST", headers, body });
+}
+
+/** Pull the Worker's JSON `{error}` message out of a non-2xx response. */
+export async function extractError(res: Response, fallback: string): Promise<string> {
+  try {
+    const err: unknown = await res.json();
+    if (
+      typeof err === "object" &&
+      err !== null &&
+      "error" in err &&
+      typeof err.error === "string"
+    ) {
+      return err.error;
+    }
+  } catch {
+    // fall through
+  }
+  return fallback;
+}
+
 /**
  * POST to /api/explain and yield text chunks as they stream in.
  * Throws on a non-2xx response (the Worker returns JSON errors before it
  * starts streaming). Cancels the underlying stream if the consumer stops.
  */
 export async function* streamExplanation(body: unknown): AsyncGenerator<string> {
-  const res = await fetch("/api/explain", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    let message = `explain failed (${res.status})`;
-    try {
-      const err: unknown = await res.json();
-      if (
-        typeof err === "object" &&
-        err !== null &&
-        "error" in err &&
-        typeof err.error === "string"
-      ) {
-        message = err.error;
-      }
-    } catch {
-      // keep the generic message
-    }
-    throw new Error(message);
-  }
+  const res = await postWithTurnstile("/api/explain", JSON.stringify(body));
+  if (!res.ok) throw new Error(await extractError(res, `explain failed (${res.status})`));
   if (!res.body) throw new Error("empty response body");
 
   const reader = res.body.getReader();

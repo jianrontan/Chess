@@ -17,6 +17,7 @@ import {
   streamExplanation,
   type ExplainState,
 } from "@/lib/explain";
+import { fileToDataUrl, scanImage } from "@/lib/scan";
 
 const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
@@ -48,6 +49,13 @@ export default function Home() {
   const [gradePending, setGradePending] = useState(false);
   const [gradeSkipped, setGradeSkipped] = useState(false);
   const [editing, setEditing] = useState(false);
+  // Image-to-FEN: the scanned position opens in the editor for the user to
+  // confirm/fix (side to move + castling can't come from a photo).
+  const [scanPreview, setScanPreview] = useState<string | null>(null);
+  const [scannedFen, setScannedFen] = useState<string | null>(null);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [scanError, setScanError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const gradeIdRef = useRef(0);
   // Position the last verdict was graded from — the grade explanation
   // must be requested against THAT fen, not the current one.
@@ -189,6 +197,28 @@ export default function Home() {
     clearVerdict();
   }
 
+  async function onScanFile(file: File) {
+    setScanBusy(true);
+    setScanError("");
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      const result = await scanImage(dataUrl);
+      setScanPreview(dataUrl);
+      setScannedFen(result.fen);
+      setEditing(true);
+    } catch (e: unknown) {
+      setScanError(e instanceof Error ? e.message : "scan failed");
+    } finally {
+      setScanBusy(false);
+    }
+  }
+
+  function closeEditor() {
+    setEditing(false);
+    setScanPreview(null);
+    setScannedFen(null);
+  }
+
   function undo() {
     gameRef.current.undo();
     setFen(gameRef.current.fen());
@@ -212,17 +242,33 @@ export default function Home() {
       <div className="grid gap-6 lg:grid-cols-[480px_minmax(0,1fr)] lg:items-start">
         <div className="flex w-full max-w-[480px] flex-col gap-4">
           {editing ? (
-            <BoardEditor
-              initialFen={fen}
-              onApply={(newFen) => {
-                gameRef.current = new Chess(newFen);
-                setFen(newFen);
-                setFenError("");
-                clearVerdict();
-                setEditing(false);
-              }}
-              onCancel={() => setEditing(false)}
-            />
+            <>
+              {scanPreview && (
+                <div className="space-y-1">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- local data URL */}
+                  <img
+                    src={scanPreview}
+                    alt="Uploaded board photo"
+                    className="max-h-56 w-full rounded-md border object-contain"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Check the board against your photo — fix any squares, then
+                    set who moves before applying.
+                  </p>
+                </div>
+              )}
+              <BoardEditor
+                initialFen={scannedFen ?? fen}
+                onApply={(newFen) => {
+                  gameRef.current = new Chess(newFen);
+                  setFen(newFen);
+                  setFenError("");
+                  clearVerdict();
+                  closeEditor();
+                }}
+                onCancel={closeEditor}
+              />
+            </>
           ) : (
             <>
               <div className="flex items-center gap-2 text-sm font-medium" aria-live="polite">
@@ -265,7 +311,27 @@ export default function Home() {
                 <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
                   Edit board
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={scanBusy}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {scanBusy ? "Scanning…" : "Scan image"}
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = ""; // same file can be re-picked
+                    if (file) void onScanFile(file);
+                  }}
+                />
               </div>
+              {scanError && <p className="text-xs text-red-600">{scanError}</p>}
 
               <div className="flex gap-2">
                 <input

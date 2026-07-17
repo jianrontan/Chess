@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>verification</title>
+<!--
+  Turnstile host page. Loaded by the app inside a CREDENTIALLESS iframe so
+  the widget's challenge frames escape the main page's COEP (which the
+  threaded engine requires). Served WITHOUT COOP/COEP — see _headers.
+  Protocol (same-origin postMessage only):
+    parent -> here : { type: "turnstile-mint", id }
+    here -> parent : { type: "turnstile-ready" } once the widget is rendered
+    here -> parent : { type: "turnstile-token", id, token: string | null }
+-->
+<script>
+  var PROD_SITEKEY = "0x4AAAAAAD38qd1vpULAPPXA";
+  var TEST_SITEKEY = "1x00000000000000000000AA"; /* always-pass test key */
+  var sitekey =
+    location.hostname === "localhost" || location.hostname === "127.0.0.1"
+      ? TEST_SITEKEY
+      : PROD_SITEKEY;
+
+  var widgetId = null;
+  var currentId = null;
+
+  function send(msg) {
+    parent.postMessage(msg, location.origin);
+  }
+
+  function finish(token) {
+    if (currentId !== null) {
+      send({ type: "turnstile-token", id: currentId, token: token });
+      currentId = null;
+    }
+  }
+
+  window.addEventListener("message", function (e) {
+    if (e.origin !== location.origin) return;
+    var d = e.data;
+    if (!d || d.type !== "turnstile-mint") return;
+    if (widgetId === null || !window.turnstile) {
+      send({ type: "turnstile-token", id: d.id, token: null });
+      return;
+    }
+    finish(null); /* a superseded mint resolves null */
+    currentId = d.id;
+    window.turnstile.reset(widgetId);
+    window.turnstile.execute(widgetId);
+  });
+
+  function onTurnstileLoad() {
+    widgetId = window.turnstile.render("#widget", {
+      sitekey: sitekey,
+      action: "turnstile-spin-v1",
+      execution: "execute",
+      callback: function (token) { finish(token); },
+      "error-callback": function () { finish(null); },
+    });
+    send({ type: "turnstile-ready" });
+  }
+</script>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad&render=explicit" async defer></script>
+</head>
+<body><div id="widget"></div></body>
+</html>

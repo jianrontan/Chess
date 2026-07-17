@@ -1,6 +1,19 @@
 /*
-  Cross-Origin-Opener-Policy: same-origin
-  Cross-Origin-Embedder-Policy: require-corp
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=()
+
+# COOP/COEP only on DOCUMENTS that need crossOriginIsolated (threaded engine).
+# /turnstile.html must stay OUT of this list: it hosts the Turnstile widget
+# inside a credentialless iframe, and Turnstile's own challenge iframe cannot
+# load under a COEP document (verified empirically — net::ERR_ABORTED).
+/
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+/index.html
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+# Dedicated worker scripts must carry COEP compatible with their creator
+# document, or worker creation is blocked (ERR_BLOCKED_BY_RESPONSE).
+/engine/*
+  Cross-Origin-Embedder-Policy: require-corp

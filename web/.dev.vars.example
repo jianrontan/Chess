@@ -6,3 +6,9 @@ ANTHROPIC_API_KEY=sk-ant-...
 # Optional overrides:
 # EXPLAIN_PROVIDER=fake      # force the mock provider even with a key
 # EXPLAIN_MODEL=claude-haiku-4-5
+
+# Turnstile: local dev pairs Cloudflare's always-pass TEST secret with the
+# TEST sitekey the frontend uses on localhost. Production uses the real
+# secret (wrangler secret put TURNSTILE_SECRET_KEY). Omit to disable
+# verification locally.
+TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
