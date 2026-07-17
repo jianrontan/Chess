@@ -1,24 +1,8 @@
 "use client";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { whiteScore } from "@/lib/engine/format";
 import type { EngineLine } from "@/lib/engine/types";
-
-/**
- * Convert a line's score to White's perspective for display.
- * UCI cp/mate are from the side to move (see web/CLAUDE.md).
- */
-function whiteScore(line: EngineLine, sideToMove: "w" | "b"): string {
-  if (line.mate !== undefined) {
-    // White-centric: "#3" = White mates in 3, "#-3" = Black mates in 3.
-    const mate = sideToMove === "w" ? line.mate : -line.mate;
-    return `#${mate}`;
-  }
-  if (line.cp !== undefined) {
-    const cp = sideToMove === "w" ? line.cp : -line.cp;
-    return `${cp >= 0 ? "+" : ""}${(cp / 100).toFixed(2)}`;
-  }
-  return "?";
-}
 
 export interface AnalysisPanelProps {
   lines: EngineLine[];

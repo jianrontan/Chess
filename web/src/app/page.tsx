@@ -193,8 +193,12 @@ export default function Home() {
     <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 p-6">
       <h1 className="text-2xl font-semibold">Chess Explanation Engine</h1>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,480px)_1fr]">
-        <div className="flex flex-col gap-4">
+      {/* The board column is FIXED width — right-column content (streaming
+          explanation text, verdict cards appearing) must never be able to
+          resize the board, which caused it to jerk sideways and tear the
+          ranks apart mid-animation. */}
+      <div className="grid gap-6 lg:grid-cols-[480px_minmax(0,1fr)]">
+        <div className="flex w-full max-w-[480px] flex-col gap-4">
           {editing ? (
             <BoardEditor
               initialFen={fen}
@@ -266,7 +270,7 @@ export default function Home() {
           )}
         </div>
 
-        <div className="flex flex-col gap-4">
+        <div className="flex min-w-0 flex-col gap-4">
           <MoveVerdictCard
             verdict={verdict}
             pending={gradePending}

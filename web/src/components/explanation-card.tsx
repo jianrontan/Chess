@@ -12,7 +12,7 @@ export function ExplanationCard({ state }: { state: ExplainState | null }) {
         {state.error ? (
           <p className="text-xs text-red-600">Explanation failed: {state.error}</p>
         ) : (
-          <p className="whitespace-pre-wrap">
+          <p className="whitespace-pre-wrap break-words">
             {state.text}
             {state.streaming && <span className="animate-pulse">▍</span>}
           </p>

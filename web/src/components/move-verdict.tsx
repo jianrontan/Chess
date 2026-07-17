@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { whiteScore } from "@/lib/engine/format";
 import type { MoveClass, MoveVerdict } from "@/lib/engine/grading";
 
 const CLASS_STYLE: Record<MoveClass, { label: string; className: string }> = {
@@ -56,6 +57,12 @@ export function MoveVerdictCard({
             {style.label}
           </span>
           <span className="font-mono font-medium">{played}</span>
+          {/* White-centric eval: best-move eval → eval after the played move.
+              Both lines share the pre-move side to move, so one conversion. */}
+          <span className="font-mono text-xs text-muted-foreground">
+            {whiteScore(verdict.bestLine, verdict.mover)} →{" "}
+            {whiteScore(verdict.playedLine, verdict.mover)}
+          </span>
         </div>
         {verdict.winPctDrop >= 1 && (
           <p className="text-xs text-muted-foreground">
