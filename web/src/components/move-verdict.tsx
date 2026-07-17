@@ -17,17 +17,20 @@ export function MoveVerdictCard({
   verdict,
   pending,
   skipped,
+  explaining,
   onExplain,
 }: {
   verdict: MoveVerdict | null;
   pending: boolean;
   skipped: boolean;
+  /** An explanation is currently streaming — hold off on new requests. */
+  explaining?: boolean;
   onExplain?: () => void;
 }) {
   if (pending) {
     return (
       <Card>
-        <CardContent className="pt-4 text-sm text-muted-foreground">
+        <CardContent className="text-sm text-muted-foreground">
           Grading your move…
         </CardContent>
       </Card>
@@ -36,7 +39,7 @@ export function MoveVerdictCard({
   if (skipped) {
     return (
       <Card>
-        <CardContent className="pt-4 text-sm text-muted-foreground">
+        <CardContent className="text-sm text-muted-foreground">
           Move not graded — the position hadn&apos;t been analyzed yet.
         </CardContent>
       </Card>
@@ -51,7 +54,7 @@ export function MoveVerdictCard({
 
   return (
     <Card>
-      <CardContent className="space-y-2 pt-4 text-sm">
+      <CardContent className="space-y-2 text-sm">
         <div className="flex items-center gap-2">
           <span className={`rounded px-2 py-0.5 text-xs font-semibold ${style.className}`}>
             {style.label}
@@ -86,8 +89,8 @@ export function MoveVerdictCard({
           </p>
         )}
         {onExplain && (
-          <Button variant="outline" size="sm" onClick={onExplain}>
-            Explain this move
+          <Button variant="outline" size="sm" disabled={explaining} onClick={onExplain}>
+            {explaining ? "Explaining…" : "Explain this move"}
           </Button>
         )}
       </CardContent>

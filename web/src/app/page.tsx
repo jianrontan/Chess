@@ -199,11 +199,12 @@ export default function Home() {
     <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 p-6">
       <h1 className="text-2xl font-semibold">Chess Explanation Engine</h1>
 
-      {/* The board column is FIXED width — right-column content (streaming
-          explanation text, verdict cards appearing) must never be able to
-          resize the board, which caused it to jerk sideways and tear the
-          ranks apart mid-animation. */}
-      <div className="grid gap-6 lg:grid-cols-[480px_minmax(0,1fr)]">
+      {/* The board column is FIXED width, and items-start stops the default
+          grid stretch: without it the left column is stretched to the height
+          of the (growing) right column, and react-chessboard's height:100%
+          root distributes that surplus BETWEEN the ranks — the horizontal
+          gaps that widened while explanations streamed in. */}
+      <div className="grid gap-6 lg:grid-cols-[480px_minmax(0,1fr)] lg:items-start">
         <div className="flex w-full max-w-[480px] flex-col gap-4">
           {editing ? (
             <BoardEditor
@@ -236,7 +237,11 @@ export default function Home() {
                 )}
               </div>
 
-              <MemoChessboard options={boardOptions} />
+              {/* aspect-square guard: the board root fills its parent 100%,
+                  so its parent must always be exactly square. */}
+              <div className="aspect-square w-full">
+                <MemoChessboard options={boardOptions} />
+              </div>
 
               <div className="flex flex-wrap gap-2">
                 <Button variant="outline" size="sm" onClick={reset}>
@@ -281,6 +286,7 @@ export default function Home() {
             verdict={verdict}
             pending={gradePending}
             skipped={gradeSkipped}
+            explaining={explanation?.streaming === true}
             onExplain={
               verdict && gradedFen
                 ? () => runExplain(gradeRequestBody(gradedFen, verdict))
@@ -298,17 +304,26 @@ export default function Home() {
             <Button
               variant="outline"
               size="sm"
-              // Lines must describe the CURRENT position (analysis.fen tag).
-              disabled={analysis.fen !== fen || analysis.lines.length === 0}
+              // Lines must describe the CURRENT position (analysis.fen tag),
+              // and one explanation streams at a time (each request costs).
+              disabled={
+                analysis.fen !== fen ||
+                analysis.lines.length === 0 ||
+                explanation?.streaming === true
+              }
               onClick={() => runExplain(candidatesRequestBody(fen, analysis.lines))}
             >
-              Explain position
+              {explanation?.streaming
+                ? "Explaining…"
+                : explanation
+                  ? "Generate new explanation"
+                  : "Explain position"}
             </Button>
           </div>
           <ExplanationCard state={explanation} />
 
           <Card>
-            <CardContent className="pt-4 text-xs text-muted-foreground">
+            <CardContent className="text-xs text-muted-foreground">
               {engine.status === "loading" && "Engine loading…"}
               {engine.status === "error" && `Engine error: ${engine.error}`}
               {engine.status === "ready" && engine.info && (
