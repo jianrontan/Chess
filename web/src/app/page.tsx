@@ -196,7 +196,12 @@ export default function Home() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 p-6">
+    // w-full is load-bearing: body is a flex container, and mx-auto on a
+    // flex item defeats the default width stretch — without w-full, main
+    // shrink-wraps its CONTENT and re-centers every time the analysis or
+    // explanation text changes length (measured: the whole page slid ~75px
+    // during a piece drag).
+    <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-6 p-6">
       <h1 className="text-2xl font-semibold">Chess Explanation Engine</h1>
 
       {/* The board column is FIXED width, and items-start stops the default
@@ -299,27 +304,23 @@ export default function Home() {
             analyzing={analysis.analyzing}
             depth={analysis.depth}
             gameOverText={overText}
+            action={
+              <Button
+                variant="outline"
+                size="sm"
+                // Lines must describe the CURRENT position (analysis.fen tag),
+                // and one explanation streams at a time (each request costs).
+                disabled={
+                  analysis.fen !== fen ||
+                  analysis.lines.length === 0 ||
+                  explanation?.streaming === true
+                }
+                onClick={() => runExplain(candidatesRequestBody(fen, analysis.lines))}
+              >
+                {explanation?.streaming ? "Explaining…" : "Explain position"}
+              </Button>
+            }
           />
-          <div>
-            <Button
-              variant="outline"
-              size="sm"
-              // Lines must describe the CURRENT position (analysis.fen tag),
-              // and one explanation streams at a time (each request costs).
-              disabled={
-                analysis.fen !== fen ||
-                analysis.lines.length === 0 ||
-                explanation?.streaming === true
-              }
-              onClick={() => runExplain(candidatesRequestBody(fen, analysis.lines))}
-            >
-              {explanation?.streaming
-                ? "Explaining…"
-                : explanation
-                  ? "Generate new explanation"
-                  : "Explain position"}
-            </Button>
-          </div>
           <ExplanationCard state={explanation} />
 
           <Card>

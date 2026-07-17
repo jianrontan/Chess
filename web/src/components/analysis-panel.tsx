@@ -1,6 +1,13 @@
 "use client";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { whiteScore } from "@/lib/engine/format";
 import type { EngineLine } from "@/lib/engine/types";
 
@@ -13,6 +20,8 @@ export interface AnalysisPanelProps {
   /** Rows to reserve while lines are empty, so the card height (and with it
    * the page scrollbar) doesn't jump every time a new search starts. */
   placeholderRows?: number;
+  /** Header action slot — e.g. the "Explain position" button. */
+  action?: React.ReactNode;
 }
 
 export function AnalysisPanel({
@@ -22,11 +31,13 @@ export function AnalysisPanel({
   depth,
   gameOverText,
   placeholderRows = 3,
+  action,
 }: AnalysisPanelProps) {
   return (
     <Card className="h-fit">
       <CardHeader>
         <CardTitle>Engine analysis</CardTitle>
+        {action && <CardAction>{action}</CardAction>}
         <CardDescription>
           {gameOverText
             ? gameOverText
