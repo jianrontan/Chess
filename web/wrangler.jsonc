@@ -16,5 +16,16 @@
   },
   "observability": {
     "enabled": true
-  }
+  },
+  // Per-IP rate limit for /api/explain (the endpoint that spends LLM tokens).
+  // Free on all plans; counters are per-colo and eventually consistent — this
+  // is an abuse brake, not an accounting system. Turnstile comes before any
+  // public marketing push (see ROADMAP Phase 2).
+  "ratelimits": [
+    {
+      "name": "EXPLAIN_RATELIMIT",
+      "namespace_id": "1001",
+      "simple": { "limit": 10, "period": 60 }
+    }
+  ]
 }

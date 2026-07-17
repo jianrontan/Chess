@@ -15,10 +15,14 @@ import { CAPS, parseExplainRequest } from "./lib/schema";
 
 interface Env extends ProviderEnv {
   ASSETS: Fetcher;
+  EXPLAIN_RATELIMIT?: RateLimit;
 }
 
 function jsonError(message: string, status: number): Response {
-  return Response.json({ error: message }, { status });
+  return Response.json(
+    { error: message },
+    { status, headers: { "x-content-type-options": "nosniff" } },
+  );
 }
 
 /** Stream provider text chunks as a plain chunked-text response. */
@@ -44,6 +48,7 @@ function streamText(chunks: AsyncIterable<string>): Response {
     headers: {
       "content-type": "text/plain; charset=utf-8",
       "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
     },
   });
 }
@@ -51,6 +56,22 @@ function streamText(chunks: AsyncIterable<string>): Response {
 async function handleExplain(request: Request, env: Env): Promise<Response> {
   if (request.method !== "POST") {
     return jsonError("method not allowed", 405);
+  }
+
+  // Per-IP brake on the one endpoint that spends LLM tokens. Fail-open if the
+  // binding is missing (local vitest); wrangler dev and prod both have it.
+  if (env.EXPLAIN_RATELIMIT) {
+    const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
+    const { success } = await env.EXPLAIN_RATELIMIT.limit({ key: ip });
+    if (!success) {
+      return jsonError("too many requests — try again in a minute", 429);
+    }
+  }
+
+  // Reject oversized payloads before buffering them.
+  const declared = Number(request.headers.get("content-length") ?? "0");
+  if (declared > CAPS.bodyBytes) {
+    return jsonError("request body too large", 413);
   }
   const raw = await request.text();
   if (raw.length > CAPS.bodyBytes) {
