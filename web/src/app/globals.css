@@ -126,5 +126,9 @@
   }
   html {
     @apply font-sans;
+    /* Reserve scrollbar space permanently: content growing/shrinking
+       (analysis loading, explanation streaming) must never toggle the
+       scrollbar and shift the centered layout sideways. */
+    scrollbar-gutter: stable;
   }
 }

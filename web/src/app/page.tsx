@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
 import { Chessboard, type PieceDropHandlerArgs } from "react-chessboard";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,12 @@ import {
 } from "@/lib/explain";
 
 const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+// Chessboard isn't memoized internally: unrelated page re-renders (each
+// streamed explanation chunk, engine status updates) would re-run it and can
+// tear the board mid-animation. With memo + the stable boardOptions object,
+// the board only re-renders when the position/orientation actually changes.
+const MemoChessboard = memo(Chessboard);
 
 function gameOverText(game: Chess): string | undefined {
   if (game.isCheckmate()) {
@@ -230,7 +236,7 @@ export default function Home() {
                 )}
               </div>
 
-              <Chessboard options={boardOptions} />
+              <MemoChessboard options={boardOptions} />
 
               <div className="flex flex-wrap gap-2">
                 <Button variant="outline" size="sm" onClick={reset}>

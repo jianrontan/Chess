@@ -10,6 +10,9 @@ export interface AnalysisPanelProps {
   analyzing: boolean;
   depth: number;
   gameOverText?: string;
+  /** Rows to reserve while lines are empty, so the card height (and with it
+   * the page scrollbar) doesn't jump every time a new search starts. */
+  placeholderRows?: number;
 }
 
 export function AnalysisPanel({
@@ -18,6 +21,7 @@ export function AnalysisPanel({
   analyzing,
   depth,
   gameOverText,
+  placeholderRows = 3,
 }: AnalysisPanelProps) {
   return (
     <Card className="h-fit">
@@ -36,10 +40,6 @@ export function AnalysisPanel({
       <CardContent>
         {gameOverText ? (
           <p className="text-sm text-muted-foreground">No moves to analyze.</p>
-        ) : lines.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            {analyzing ? "Searching…" : "Make a move or load a position."}
-          </p>
         ) : (
           <table className="w-full text-sm">
             <thead>
@@ -51,16 +51,29 @@ export function AnalysisPanel({
               </tr>
             </thead>
             <tbody>
-              {lines.map((l) => (
-                <tr key={l.multipv} className="border-t align-top">
-                  <td className="py-1.5 pr-3">{l.multipv}</td>
-                  <td className="py-1.5 pr-3 font-mono font-medium">{l.pv[0]}</td>
-                  <td className="py-1.5 pr-3 font-mono">{whiteScore(l, sideToMove)}</td>
-                  <td className="py-1.5 font-mono text-xs text-muted-foreground">
-                    {l.pv.slice(0, 6).join(" ")}
-                  </td>
-                </tr>
-              ))}
+              {lines.length > 0
+                ? lines.map((l) => (
+                    <tr key={l.multipv} className="border-t align-top">
+                      <td className="py-1.5 pr-3">{l.multipv}</td>
+                      <td className="py-1.5 pr-3 font-mono font-medium">{l.pv[0]}</td>
+                      <td className="py-1.5 pr-3 font-mono">{whiteScore(l, sideToMove)}</td>
+                      <td className="py-1.5 font-mono text-xs text-muted-foreground">
+                        {l.pv.slice(0, 6).join(" ")}
+                      </td>
+                    </tr>
+                  ))
+                : // Same row heights as real lines — the card must not shrink
+                  // (and bounce the page scrollbar) while a search restarts.
+                  Array.from({ length: placeholderRows }, (_, i) => (
+                    <tr key={i} className="border-t align-top text-muted-foreground/50">
+                      <td className="py-1.5 pr-3">{i + 1}</td>
+                      <td className="py-1.5 pr-3 font-mono font-medium">—</td>
+                      <td className="py-1.5 pr-3 font-mono">—</td>
+                      <td className="py-1.5 font-mono text-xs">
+                        {analyzing ? "searching…" : "waiting for position"}
+                      </td>
+                    </tr>
+                  ))}
             </tbody>
           </table>
         )}
