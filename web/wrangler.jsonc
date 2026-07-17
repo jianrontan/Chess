@@ -17,6 +17,9 @@
   "observability": {
     "enabled": true
   },
+  // jianrontan.com's zone is on Cloudflare, so this creates the DNS record
+  // and TLS cert automatically on deploy.
+  "routes": [{ "pattern": "chess.jianrontan.com", "custom_domain": true }],
   // Per-IP rate limit for /api/explain (the endpoint that spends LLM tokens).
   // Free on all plans; counters are per-colo and eventually consistent — this
   // is an abuse brake, not an accounting system. Turnstile comes before any

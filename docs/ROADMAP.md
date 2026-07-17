@@ -19,10 +19,11 @@ DECISIONS.md for the reasoning behind the starred (*) items.
 
 The demo becomes real: a position on screen, analyzed locally.
 
-- [x] *Hello-world stack proven LOCALLY (wrangler dev + Playwright):
-      static export + `_headers` COOP/COEP → crossOriginIsolated=true, threaded
-      lite engine (8 threads) reached depth 23 in 5s MultiPV 3, same-origin
-      /api/health OK. Production deploy pending `wrangler login`.
+- [x] *Hello-world stack proven locally AND in production
+      (https://chess.jianrontan.com, custom domain on the jianrontan.com zone):
+      COOP/COEP headers live → crossOriginIsolated=true, threaded lite engine
+      (8 threads), same-origin /api/health OK, rate limit + daily budget
+      verified against the deployed Worker.
 - [x] *CI: GitHub Actions running ruff+pytest (pipeline) and lint+tsc+build (web)
 - [x] Board UI (`react-chessboard` v5 + chess.js): play legal moves, paste FEN
       with validation, undo/reset/flip, auto-analysis on position change
@@ -70,7 +71,8 @@ The demo becomes real: a position on screen, analyzed locally.
       one-click orientation flip, and explicit side-to-move + castling inputs
       (an image cannot supply those). Client-side ONNX CV model is the designed
       v2 upgrade (zero cost, zero abuse surface, privacy win).
-- [ ] Deploy: static export + Worker, wired to the domain
+- [x] Deploy: static export + Worker, wired to chess.jianrontan.com (fake
+      provider until the API key secret is set post-Turnstile)
 - Done when: the full user experience works end to end on the public site with
   abuse protection on.
 
