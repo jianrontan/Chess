@@ -71,8 +71,8 @@ The demo becomes real: a position on screen, analyzed locally.
       one-click orientation flip, and explicit side-to-move + castling inputs
       (an image cannot supply those). Client-side ONNX CV model is the designed
       v2 upgrade (zero cost, zero abuse surface, privacy win).
-- [x] Deploy: static export + Worker, wired to chess.jianrontan.com (fake
-      provider until the API key secret is set post-Turnstile)
+- [x] Deploy: static export + Worker, wired to chess.jianrontan.com; live
+      Haiku explanations (API key as Worker secret, real request verified)
 - Done when: the full user experience works end to end on the public site with
   abuse protection on.
 
