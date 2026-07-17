@@ -53,9 +53,10 @@ The demo becomes real: a position on screen, analyzed locally.
 - [x] Cloudflare Worker: `/api/explain` endpoint, provider-agnostic LLM client
       (Anthropic + deterministic fake; fake runs until a key exists), API key in
       Worker env (`.dev.vars` locally), same-origin route under the app's domain
-- [ ] *Abuse protection BEFORE the endpoint is public: Turnstile + per-IP rate
-      limit + provider-side monthly spend limit (payload caps + `max_tokens`
-      cap already shipped with the endpoint)
+- [ ] *Abuse protection BEFORE the endpoint is public: Turnstile + provider-side
+      monthly spend limit (user-set). Already shipped: payload caps,
+      `max_tokens` cap, per-IP rate limit (10/min), global daily budget
+      (Durable Object counter, `DAILY_BUDGET`/day worker-wide)
 - [x] *Worker validates client input: replay candidate/PV moves for legality
       (chess.js), clamp evals, payload caps (k≤5, PV≤12, 16KB body), treat
       evals as "client-reported"; prompt built only from our re-serialization
