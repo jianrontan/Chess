@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
 import { Chessboard, type PieceDropHandlerArgs } from "react-chessboard";
 import { Button } from "@/components/ui/button";
@@ -57,49 +57,77 @@ export default function Home() {
   const sideToMove = useMemo(() => (fen.split(" ")[1] === "b" ? "b" : "w"), [fen]);
   // Derived from FEN alone (render must not read the ref). Note: threefold
   // repetition needs move history, so it isn't detected here — fine for now.
-  const overText = useMemo(() => gameOverText(new Chess(fen)), [fen]);
+  const { overText, inCheck } = useMemo(() => {
+    const game = new Chess(fen);
+    return { overText: gameOverText(game), inCheck: game.inCheck() };
+  }, [fen]);
 
-  function onPieceDrop({ sourceSquare, targetSquare }: PieceDropHandlerArgs): boolean {
-    if (!targetSquare) return false;
-    // Snapshot BEFORE the move: grading compares against this position.
-    // analysis.lines may still describe the PREVIOUS position (debounce
-    // window) — only use them if they are tagged with this exact FEN.
-    const preFen = gameRef.current.fen();
-    const preLines = analysis.fen === preFen ? analysis.lines : [];
-    try {
-      // TODO(ui): promotion picker; auto-queen for now.
-      const move = gameRef.current.move({
-        from: sourceSquare,
-        to: targetSquare,
-        promotion: "q",
-      });
-      setFen(gameRef.current.fen());
-      setFenError("");
+  // Latest analysis for event handlers, WITHOUT making the handlers (and
+  // therefore the board options) change identity on every engine update —
+  // unstable options force react-chessboard to reprocess mid-animation
+  // (the flicker/board-gap bug).
+  const analysisRef = useRef(analysis);
+  useEffect(() => {
+    analysisRef.current = analysis;
+  }, [analysis]);
 
-      // Mode 2: grade the played move (instant if it was in the top k).
-      const moveUci = move.from + move.to + (move.promotion ?? "");
-      const gradeId = ++gradeIdRef.current;
-      setVerdict(null);
-      setGradeSkipped(false);
-      setGradePending(true);
-      gradeMove(preFen, moveUci, preLines).then((v) => {
-        if (gradeIdRef.current !== gradeId) return; // a newer move superseded us
-        setVerdict(v);
-        setGradedFen(v ? preFen : null);
-        setGradeSkipped(v === null); // no baseline — say so instead of vanishing
-        setGradePending(false);
-      });
-      clearExplanation();
-      return true;
-    } catch {
-      return false; // illegal — board reverts
-    }
-  }
-
-  function clearExplanation() {
+  const clearExplanation = useCallback(() => {
     explainIdRef.current++; // a stale in-flight stream stops writing state
     setExplanation(null);
-  }
+  }, []);
+
+  const onPieceDrop = useCallback(
+    ({ sourceSquare, targetSquare }: PieceDropHandlerArgs): boolean => {
+      if (!targetSquare) return false;
+      // Snapshot BEFORE the move: grading compares against this position.
+      // analysis.lines may still describe the PREVIOUS position (debounce
+      // window) — only use them if they are tagged with this exact FEN.
+      const preFen = gameRef.current.fen();
+      const latest = analysisRef.current;
+      const preLines = latest.fen === preFen ? latest.lines : [];
+      try {
+        // TODO(ui): promotion picker; auto-queen for now.
+        const move = gameRef.current.move({
+          from: sourceSquare,
+          to: targetSquare,
+          promotion: "q",
+        });
+        setFen(gameRef.current.fen());
+        setFenError("");
+
+        // Mode 2: grade the played move (instant if it was in the top k).
+        const moveUci = move.from + move.to + (move.promotion ?? "");
+        const gradeId = ++gradeIdRef.current;
+        setVerdict(null);
+        setGradeSkipped(false);
+        setGradePending(true);
+        gradeMove(preFen, moveUci, preLines).then((v) => {
+          if (gradeIdRef.current !== gradeId) return; // a newer move superseded us
+          setVerdict(v);
+          setGradedFen(v ? preFen : null);
+          setGradeSkipped(v === null); // no baseline — say so instead of vanishing
+          setGradePending(false);
+        });
+        clearExplanation();
+        return true;
+      } catch {
+        return false; // illegal — board reverts
+      }
+    },
+    [gradeMove, clearExplanation],
+  );
+
+  // Stable unless the position/orientation actually changes — engine updates
+  // must not re-render the board.
+  const boardOptions = useMemo(
+    () => ({
+      position: fen,
+      onPieceDrop,
+      boardOrientation: orientation,
+      id: "main-board",
+    }),
+    [fen, orientation, onPieceDrop],
+  );
 
   function clearVerdict() {
     gradeIdRef.current++;
@@ -181,14 +209,24 @@ export default function Home() {
             />
           ) : (
             <>
-              <Chessboard
-                options={{
-                  position: fen,
-                  onPieceDrop,
-                  boardOrientation: orientation,
-                  id: "main-board",
-                }}
-              />
+              <div className="flex items-center gap-2 text-sm font-medium" aria-live="polite">
+                <span
+                  className={`inline-block h-3.5 w-3.5 rounded-full border-2 ${
+                    sideToMove === "w"
+                      ? "border-neutral-400 bg-white"
+                      : "border-neutral-900 bg-neutral-900"
+                  }`}
+                  aria-hidden
+                />
+                {overText ?? (
+                  <>
+                    {sideToMove === "w" ? "White" : "Black"} to move
+                    {inCheck && <span className="font-semibold text-red-600">— check!</span>}
+                  </>
+                )}
+              </div>
+
+              <Chessboard options={boardOptions} />
 
               <div className="flex flex-wrap gap-2">
                 <Button variant="outline" size="sm" onClick={reset}>
@@ -207,9 +245,6 @@ export default function Home() {
                 <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
                   Edit board
                 </Button>
-                <span className="ml-auto self-center text-sm text-muted-foreground">
-                  {overText ?? `${sideToMove === "w" ? "White" : "Black"} to move`}
-                </span>
               </div>
 
               <div className="flex gap-2">

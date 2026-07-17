@@ -125,12 +125,13 @@ export function useEngineAnalysis(
           },
           onLines: (lines) => {
             if (generationRef.current !== generation) return;
-            setAnalysis({
-              lines,
-              depth: lines[0]?.depth ?? 0,
-              analyzing: true,
-              fen,
-            });
+            const depth = lines[0]?.depth ?? 0;
+            // Publish only when the search deepens. Stockfish emits many info
+            // lines per second; pushing each one through setState re-renders
+            // the whole page and makes the board flicker mid-animation.
+            setAnalysis((prev) =>
+              depth > prev.depth ? { lines, depth, analyzing: true, fen } : prev,
+            );
           },
         })
         .then((result) => {
