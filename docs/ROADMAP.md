@@ -107,7 +107,7 @@ The differentiator. Build it before RAG so RAG has a scoreboard on arrival.
 - [x] *GAMEKNOT licensing/provenance spike DONE — outcome: GAMEKNOT is
       unusable for the public index (no license, EULA owns all comments;
       offline-eval-only at most). See DECISIONS.md 2026-07-16.
-- [ ] Corpus (pending user sign-off on the swap): Chess Stack Exchange dump
+- [ ] Corpus (swap signed off, DECISIONS.md 2026-07-17): Chess Stack Exchange dump
       (CC BY-SA, quotable with attribution) + public-domain annotated classics
       (+ optional Wikibooks openings); Lichess studies via API export under a
       retrieve-and-ground/never-quote policy. Download, clean, position-key,
