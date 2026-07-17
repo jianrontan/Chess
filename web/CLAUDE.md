@@ -29,3 +29,12 @@ via `pnpm --filter web <script>` or from this directory.
 - Engine access goes through `src/lib/engine/client.ts` (EngineClient) — it
   serializes searches internally; never talk UCI to the worker directly.
   `AnalyzeResult.bestMove` is null for terminal positions — always handle it.
+
+## Windows dev-server gotcha (wrangler + `out/`)
+`pnpm preview` (wrangler dev) locks and watches `web/out`. Running `pnpm build`
+while it's up fails with EBUSY — and force-killing only `workerd.exe` to free the
+lock wedges the parent wrangler process (watcher EPERM → Ctrl+C hangs forever on
+"Shutting down local server…"). **Ask the user to stop their preview before
+rebuilding**; never taskkill workerd out from under a live wrangler. If wrangler
+is already wedged: close its terminal (or `taskkill /F /IM workerd.exe` — the
+frozen parent then exits) and restart `pnpm preview`.
