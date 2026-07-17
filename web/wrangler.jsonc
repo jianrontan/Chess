@@ -27,5 +27,16 @@
       "namespace_id": "1001",
       "simple": { "limit": 10, "period": 60 }
     }
-  ]
+  ],
+  // Global daily budget: one strongly-consistent counter capping the WHOLE
+  // worker's explanations/day (the per-IP limit has no aggregate ceiling).
+  // SQLite-backed class = available on the free plan.
+  "durable_objects": {
+    "bindings": [{ "name": "BUDGET", "class_name": "BudgetCounter" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["BudgetCounter"] }],
+  "vars": {
+    // ~$1.50/day worst case at Haiku prices with the 512-token output cap.
+    "DAILY_BUDGET": "300"
+  }
 }

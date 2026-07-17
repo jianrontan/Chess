@@ -9,13 +9,40 @@
  * static asset), set the headers here explicitly.
  */
 
+import { BudgetCounter } from "./budget";
 import { buildPrompt, PROMPT_VERSION } from "./lib/prompt";
 import { providerFromEnv, type ProviderEnv } from "./lib/providers";
 import { CAPS, parseExplainRequest } from "./lib/schema";
 
+export { BudgetCounter };
+
+/** Default worker-wide explanations/day when DAILY_BUDGET isn't set. */
+const DEFAULT_DAILY_BUDGET = 300;
+
 interface Env extends ProviderEnv {
   ASSETS: Fetcher;
   EXPLAIN_RATELIMIT?: RateLimit;
+  BUDGET?: DurableObjectNamespace<BudgetCounter>;
+  DAILY_BUDGET?: string;
+}
+
+/**
+ * Global daily cap across ALL clients (see budget.ts). Counted after
+ * validation so malformed floods can't drain the budget for real users.
+ * Fail-open: a budget-infra error must not take the endpoint down — the
+ * per-IP limit and the provider spend limit still stand behind it.
+ */
+async function budgetExhausted(env: Env): Promise<boolean> {
+  if (!env.BUDGET) return false;
+  const limit = Number(env.DAILY_BUDGET ?? DEFAULT_DAILY_BUDGET);
+  if (!Number.isFinite(limit) || limit <= 0) return false;
+  try {
+    const day = new Date().toISOString().slice(0, 10);
+    const stub = env.BUDGET.get(env.BUDGET.idFromName("global"));
+    return (await stub.consume(day)) > limit;
+  } catch {
+    return false;
+  }
 }
 
 function jsonError(message: string, status: number): Response {
@@ -89,6 +116,13 @@ async function handleExplain(request: Request, env: Env): Promise<Response> {
 
   const built = buildPrompt(parsed.request);
   if (!built.ok) return jsonError(built.error, 400);
+
+  if (await budgetExhausted(env)) {
+    return jsonError(
+      "the site's daily explanation budget is used up — try again tomorrow",
+      429,
+    );
+  }
 
   const provider = providerFromEnv(env);
   return streamText(provider.explain(built.prompt));
