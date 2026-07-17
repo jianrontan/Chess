@@ -44,7 +44,7 @@ flowchart TD
     LLM["LLM API\n(Claude, swappable)"]
 
     subgraph Offline["Offline pipeline — Python, runs on homelab"]
-        Data["Lichess puzzles + GAMEKNOT commentary"]
+        Data["Lichess puzzles + licensed commentary corpus"]
         Build["Feature extraction, chunking, embeddings"]
         Eval["Eval harness"]
         Data --> Build
@@ -120,10 +120,12 @@ conventions stay separated.
 
 - **Lichess puzzle database** (~6M puzzles, CC0). Serves as both the position source and
   the evaluation answer key: each entry gives a FEN, the solution moves, and theme tags.
-- **GAMEKNOT commentary** (~298k aligned move/comment pairs). The retrieval corpus,
-  filtered to the more useful annotation categories.
-- **PGN game collections** (Lichess Elite database, pgnmentor.com) for additional
-  positions.
+- **Commentary corpus** (clean-licensed): Chess Stack Exchange Q&A (CC BY-SA 4.0,
+  displayed with attribution), public-domain annotated classics (Capablanca,
+  Ed. Lasker), and Lichess studies used for grounding only (their text is never
+  displayed). The GAMEKNOT research dataset was evaluated and ruled out for the
+  public site on licensing grounds.
+- **PGN game collections** (Lichess Elite database) for additional positions.
 
 Raw data is not committed to the repository. Only small test fixtures are tracked.
 

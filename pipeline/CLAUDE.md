@@ -18,7 +18,7 @@ uploaded to Cloudflare Vectorize.
   bad fixtures fail loudly. Legality is this project's ground-truth lever.
 - Use the **native Stockfish binary** here for batch ground-truth (git-ignored,
   downloaded per machine) — not the WASM build, which belongs to `/web`.
-- Raw data (Lichess puzzle CSV, GAMEKNOT, PGNs) lives in `data/` and is git-ignored.
+- Raw data (Lichess puzzle CSV, commentary corpora, PGNs) lives in `data/` and is git-ignored.
   Commit only small fixtures under `tests/fixtures/` (force-add: `git add -f`).
 
 ## Eval harness principles (when built)

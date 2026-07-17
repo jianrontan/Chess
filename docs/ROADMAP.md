@@ -138,6 +138,6 @@ The differentiator. Build it before RAG so RAG has a scoreboard on arrival.
 ## Later / out of scope for v1
 
 - Client-side ONNX board-recognition model replacing the vision-LLM scan
-- Fine-tune a small model on GAMEKNOT and eval it against RAG
+- Fine-tune a small model on an annotated-commentary corpus and eval it against RAG
 - Full-game review mode (annotate every move of a PGN, chess.com game report)
 - Opening-theory corpus; user accounts; explanation history

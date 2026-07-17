@@ -190,5 +190,5 @@ GameKnot problem, no real license grant); `Icannos/chess_studies` CC0 tag
 (uploader can't re-license others' text); PGN Mentor (no license statement,
 bare game scores anyway).
 
-**Consequence:** CLAUDE.md/ARCHITECTURE still name GAMEKNOT as the RAG corpus —
-update pending user sign-off on the corpus swap.
+**Consequence:** corpus swap signed off 2026-07-17; CLAUDE.md, ARCHITECTURE.md,
+and README updated to the clean-licensed corpus.

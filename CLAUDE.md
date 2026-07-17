@@ -22,7 +22,8 @@ fixtures).
 2. **Engine** — Stockfish returns best move + evaluation (this is ground truth; never override it).
 3. **Feature extraction** — convert the board into describable facts (open files, exposed
    king, forks) via python-chess + light LLM tagging. The bridge that makes retrieval possible.
-4. **Retrieval (RAG)** — use those features to fetch matching GAMEKNOT commentary from Vectorize.
+4. **Retrieval (RAG)** — use those features to fetch matching human commentary
+   (Chess Stack Exchange, public-domain annotated classics, Lichess studies) from Vectorize.
 5. **Synthesis** — LLM weaves position + engine facts + retrieved commentary into plain English.
 
 Off to the side: the **eval harness** grades output on Lichess puzzles. Legality and
@@ -68,14 +69,20 @@ the live path. (See `claude-api` skill for current model IDs/pricing before codi
 1. **Engine + LLM explainer** (zero corpus) — self-verifying from day one via a pytest
    legality check.
 2. **Eval harness** against puzzle theme tags.
-3. **RAG retrieval** (GAMEKNOT) — then measure the with/without-RAG delta.
+3. **RAG retrieval** (clean-licensed corpus) — then measure the with/without-RAG delta.
 
 ## Data (all git-ignored — see `.gitignore`)
 - **Lichess puzzle DB** (~6M puzzles, CC0): positions + eval gold set (FEN, solution,
   themes). Both position source and eval answer key.
-- **GAMEKNOT commentary** (~298k move/comment pairs): the RAG corpus. Filter to the
-  Planning/Quality/Comparison categories; drop noisy General/Description.
-- **PGN games:** Lichess Elite DB / pgnmentor.com (avoid the 200GB/month raw dumps).
+- **RAG corpus (clean-licensed only — DECISIONS.md 2026-07-16):** Chess Stack
+  Exchange dumps (CC BY-SA 4.0; quotable verbatim WITH attribution + link) +
+  public-domain annotated classics (Capablanca, Ed. Lasker; pre-1931 US rule —
+  Chernev is NOT PD) + optional Wikibooks openings. **Lichess studies** (API
+  export) are retrieve-and-ground only — never display their raw text.
+  **GAMEKNOT is out**: its EULA owns all user comments; offline-eval benchmark
+  at most, never in the public index.
+- **PGN games:** Lichess Elite DB (avoid the 200GB/month raw dumps; pgnmentor
+  dropped — no license statement).
 
 Keep raw data out of git; commit only small test fixtures with `git add -f`.
 

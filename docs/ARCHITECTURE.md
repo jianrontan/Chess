@@ -294,14 +294,24 @@ by hand — never per user request.
 
 **Corpus construction (one-time, then occasional refreshes):**
 
-1. **Source:** the GAMEKNOT commentary dataset — ~298k pairs of (game move,
-   human-written explanation), plus optional opening-theory text. Before any
-   cleaning code is written: a licensing/provenance check (it is scraped forum
-   content from a 2018 research project) and an identified fallback corpus
-   (permissively licensed annotated PGNs, Lichess studies).
-2. **Clean and filter:** drop the noisy categories (bare descriptions, chatter),
-   keep explanations of plans, quality judgments, and comparisons; dedupe;
-   normalize the informal forum prose. Expect to land at ~20–50k good chunks.
+1. **Sources (clean-licensed only — the 2026-07-16 licensing spike ruled out
+   GAMEKNOT; see DECISIONS.md):**
+   - **Chess Stack Exchange** dumps (CC BY-SA 4.0): position/plan Q&A; quotable
+     verbatim in the UI with attribution + a link back to the post.
+   - **Public-domain annotated classics** (Capablanca's *Chess Fundamentals*,
+     Ed. Lasker's *Chess Strategy* — pre-1931 US publications, via Gutenberg):
+     timeless positional prose; needs notation conversion.
+   - **Lichess studies** via the official API export, under a strict
+     **retrieve-and-ground, never-quote** policy: their text informs the LLM but
+     is never displayed; each retrieval keeps its source-study URL internally.
+   - Optional supplement: Wikibooks *Chess Opening Theory* (CC BY-SA),
+     opening-phase positions only.
+   GAMEKNOT (the 2018 research corpus) is at most an **offline eval benchmark**;
+   its EULA assigns all user comments exclusively to GameKnot, so it never
+   enters the public index.
+2. **Clean and filter:** extract position-referencing Q&A and annotations,
+   dedupe, keep plan/quality/comparison prose. Expect ~4–8k good chunks —
+   deliberately curated small, since the free-tier index caps size anyway.
 3. **Key each chunk by position:** for every comment, replay its game with
    python-chess to the position it refers to, and store the FEN plus extracted
    features (the same feature vocabulary the serve plane uses). What gets
@@ -311,9 +321,10 @@ by hand — never per user request.
    build and query time** — bge-base-en-v1.5 (768d), which exists both as a local
    sentence-transformers model and as `@cf/baai/bge-base-en-v1.5` on Workers AI.
    Model + dimensions are stamped into the Vectorize index name so a mismatch is
-   impossible to miss. Sizing note: 20–50k chunks × 768d exceeds the Vectorize
-   free tier (5M stored dims); the call between Workers Paid ($5/mo, plenty) and
-   a smaller 384d corpus is deferred until the corpus actually exists.
+   impossible to miss. Sizing: the $5/mo NFR rules out Workers Paid, so the index
+   lives on the Vectorize free tier (5M stored dims) — ~6k chunks @768d or ~13k
+   @384d (bge-small); the 4–8k-chunk clean corpus fits either way, with the
+   dimension choice made once corpus quality is visible.
 
 The shared feature vocabulary between build and serve is the load-bearing design
 decision: the serve plane asks "positions with a knight fork and an exposed king"
@@ -370,15 +381,16 @@ and measure how often the LLM judge agrees with the human labels. If agreement i
 high, the judge is trusted to grade the full eval sweeps. This is validation of a
 grader, not training of a model — no weights change.
 
-If we ever wanted to go further (fine-tuning a small model on GAMEKNOT to write
+If we ever wanted to go further (fine-tuning a small model on an annotated-game corpus to write
 explanations directly), that would be a research extension, and the eval harness
 we already built is exactly the instrument that could measure whether it beats the
 RAG approach. It is out of scope for v1.
 
 ### Honest limitations
 
-- **The corpus caps the ceiling.** GAMEKNOT commentary is mostly club-player
-  level, not grandmaster prose. Retrieval grounds the explanations; it cannot
+- **The corpus caps the ceiling.** Stack Exchange answers and club-level
+  annotations are instructive but not grandmaster prose, and the clean-licensed
+  corpus is small (~4–8k chunks). Retrieval grounds the explanations; it cannot
   make them deeper than the source material.
 - **Engine numbers are not human reasons.** Stockfish knows Nc7+ wins; it does not
   know it is "a fork". The feature-extraction bridge is the fragile, interesting
@@ -462,8 +474,11 @@ vector storage if the full corpus is kept at 768 dimensions.
   then have the model write from it instead of from memory.
 - **Embedding** — a list of numbers capturing a text's meaning, so similarity can
   be computed. How retrieval finds "commentary about forks" without keyword match.
-- **GAMEKNOT dataset** — ~298k (move, human explanation) pairs scraped from the
-  GAMEKNOT forum by a 2018 research project; our retrieval corpus.
+- **Retrieval corpus** — the human commentary the index serves: Chess Stack
+  Exchange Q&A (CC BY-SA), public-domain annotated classics, and Lichess
+  studies (grounding only, never quoted). The GAMEKNOT research dataset
+  (~298k scraped forum pairs) was ruled out for the public index on licensing
+  grounds — offline eval benchmark at most.
 - **Eval harness** — the automated grader: runs the system on puzzles with known
   answers and scores legality, move match, and explanation correctness.
 - **LLM judge** — a model used as the grader for explanation quality, trusted only
