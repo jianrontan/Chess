@@ -7,16 +7,28 @@ never annotated — every image is born with a perfect per-square label grid.
 
 ## Layout
 
-- `src/vision/pieces.py` — import Lichess piece sets from a lila sparse
-  checkout; only openly-licensed sets, recorded in `PIECE_LICENSES.json`
-  (committed). SVGs land in `assets/pieces/` (git-ignored, regenerable).
+- `src/vision/pieces.py` — import piece sets from a lila sparse checkout
+  (Lichess) plus Maurizio Monge's chess-art repo; 37 openly-licensed sets
+  total, recorded in `PIECE_LICENSES.json` (committed). SVGs land in
+  `assets/pieces/` (git-ignored, regenerable).
 - `src/vision/sprites.py` — rasterize SVGs → PNG sprites (`assets/sprites/`).
   The only step needing cairo (`uv sync --group raster`).
-- `src/vision/render.py` — compose labeled board images: 32 piece sets ×
+- `src/vision/render.py` — compose labeled board images: piece sets ×
   themes × square sizes × orientation × coordinates × highlights.
   `labels[iy][ix]` always describes the image cell, regardless of orientation.
-- Coming next: dataset builder (augmentation), training, ONNX export, and the
-  held-out-style accuracy gate.
+- `src/vision/positions.py` — random material-legal FENs (promotion-aware,
+  sparse-endgame capable) to fill gaps puzzle positions don't cover.
+- `src/vision/dataset.py` — augmented (JPEG artifacts, rescale, crop jitter),
+  sharded `.npz` train/heldout split; certain piece sets/themes exist only in
+  heldout so training can't cheat.
+- `src/vision/build.py` — CLI: build the full sharded dataset.
+- `src/vision/train.py` — SquareNet per-square CNN (13 classes, ~212k
+  params), checkpoint resume, ONNX export + int8 quantization with parity
+  checks (`uv sync --group ml`).
+- `src/vision/boardfix.py` — post-processing: resolve duplicate/missing king
+  claims across the 64-square prediction grid.
+- Not yet built: the browser runtime (onnxruntime-web) and the held-out-style
+  accuracy gate (latest run ~98.8% square-level, target ≥99.5%).
 
 ## Setup
 

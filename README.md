@@ -108,12 +108,16 @@ without** retrieval, which shows whether the RAG layer earns its place.
 .
 ├── pipeline/   Python. Offline data processing, feature extraction,
 │               embeddings, and the evaluation harness. Never runs in production.
+├── vision/     Python (separate uv project). Board-recognition subproject:
+│               generated training data, per-square CNN, ONNX export for the
+│               in-browser screenshot scan.
 ├── web/        TypeScript. The live application (Next.js frontend + Cloudflare Worker).
+├── docs/       Design docs — ARCHITECTURE.md is the definitive system design.
 ├── CLAUDE.md   Shared project context and conventions.
 └── README.md
 ```
 
-Each of `pipeline/` and `web/` carries its own `CLAUDE.md` so the Python and TypeScript
+Each of `pipeline/`, `vision/`, and `web/` carries its own `CLAUDE.md` so per-language
 conventions stay separated.
 
 ## Data sources

@@ -88,11 +88,12 @@ Web): zero API cost, no Turnstile, the image never leaves their machine.
 Physical-photo support is explicitly OUT of scope. The training-data trick is
 the project's signature move: we control the renderer, so labeled data is free.
 
-- [ ] Data generator (`pipeline/vision`): render puzzle-DB FENs across many
-      piece sets + board themes (Lichess open-licensed sets), coordinates
-      on/off, highlights; augment with JPEG artifacts, rescaling, crop jitter
-- [ ] Per-square CNN (13 classes, ~300k params), ONNX export + quantization
-      (target <500KB asset)
+- [x] Data generator (`vision/`): render puzzle-DB FENs across many piece
+      sets + board themes (Lichess open-licensed sets + Monge chess-art
+      sets, 37 total), coordinates on/off, highlights; augmented with JPEG
+      artifacts, rescaling, crop jitter into sharded .npz
+- [x] Per-square CNN (13 classes, ~212k params), ONNX export + int8
+      quantization (measured ~215KB, target <500KB met)
 - [ ] *Accuracy gate: >=99.5% square-level on HELD-OUT piece sets/themes +
       a hand-collected set of real Lichess/chess.com screenshots; the model
       ships only when the gate report passes (report lives in the repo)
