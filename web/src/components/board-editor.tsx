@@ -15,6 +15,7 @@ import {
   availableCastling,
   buildEditorFen,
   castlingFromFen,
+  materialError,
   type CastlingChoice,
 } from "@/lib/editor";
 
@@ -75,9 +76,24 @@ export function BoardEditor({
       setError("");
       return true;
     }
+
+    // Trial mutation with rollback: impossible material (9th pawn, extra
+    // queen with all pawns present) is refused AT DROP TIME, NCM-style,
+    // not left to sit until apply.
+    const before = placement.fen();
     if (!piece.isSparePiece) placement.remove(sourceSquare as Square);
     const ok = placement.put({ color, type }, targetSquare as Square);
-    if (!ok) return false; // e.g. a second king of the same color
+    if (!ok) {
+      placementRef.current = new Chess(before, { skipValidation: true });
+      setError("Each side has exactly one king.");
+      return false;
+    }
+    const material = materialError(placement);
+    if (material) {
+      placementRef.current = new Chess(before, { skipValidation: true });
+      setError(material);
+      return false;
+    }
     setPosition(placement.fen());
     setError("");
     return true;
