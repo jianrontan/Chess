@@ -182,6 +182,22 @@ def main() -> None:
         help="train on only the first N shards (0 = all) — faster runs on a busy machine",
     )
     parser.add_argument(
+        "--shards-per-epoch",
+        type=int,
+        default=0,
+        help="rotate a window of N shards per epoch (0 = all): short epochs, full coverage over time",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="continue from last.pt — training runs as short kill-proof slices",
+    )
+    parser.add_argument(
+        "--quick-eval",
+        action="store_true",
+        help="evaluate on one heldout shard per epoch (full eval at the end)",
+    )
+    parser.add_argument(
         "--threads",
         type=int,
         default=2,
@@ -203,12 +219,19 @@ def main() -> None:
     print(f"train: {n_train} squares | heldout: {n_heldout} squares")
 
     def train_batches(epoch: int):
-        return iter_batches(train_shards, args.batch, shuffle=True, seed=args.seed, epoch=epoch)
+        shards = train_shards
+        if args.shards_per_epoch > 0:
+            k = args.shards_per_epoch
+            start = (epoch * k) % len(train_shards)
+            shards = [train_shards[(start + i) % len(train_shards)] for i in range(k)]
+        return iter_batches(shards, args.batch, shuffle=True, seed=args.seed, epoch=epoch)
 
-    def heldout_batches():
-        return iter_batches(heldout_shards, 1024, shuffle=False)
+    def heldout_batches(quick: bool = False):
+        shards = heldout_shards[:1] if quick else heldout_shards
+        return iter_batches(shards, 1024, shuffle=False)
 
-    steps_per_epoch = max(1, n_train // args.batch)
+    per_epoch = args.shards_per_epoch or len(train_shards)
+    steps_per_epoch = max(1, (n_train * per_epoch // len(train_shards)) // args.batch)
 
     model = SquareNet()
     n_params = sum(p.numel() for p in model.parameters())
@@ -218,7 +241,19 @@ def main() -> None:
 
     history = []
     best = 0.0
-    for epoch in range(args.epochs):
+    start_epoch = 0
+    last_path = run_dir / "last.pt"
+    if args.resume and last_path.exists():
+        state = torch.load(last_path, weights_only=False)
+        model.load_state_dict(state["model"])
+        optimizer.load_state_dict(state["optimizer"])
+        start_epoch = state["epoch"] + 1
+        best = state["best"]
+        history = state["history"]
+        print(f"resumed after epoch {state['epoch']} (best {best:.5f})", flush=True)
+    if start_epoch >= args.epochs:
+        print("already trained to the requested epochs", flush=True)
+    for epoch in range(start_epoch, args.epochs):
         model.train()
         t0 = time.time()
         running = 0.0
@@ -235,7 +270,7 @@ def main() -> None:
                     f"epoch {epoch} step {step}/{steps_per_epoch} loss {loss.item():.4f}",
                     flush=True,
                 )
-        overall, per_class = evaluate(model, heldout_batches())
+        overall, per_class = evaluate(model, heldout_batches(quick=args.quick_eval))
         history.append({"epoch": epoch, "loss": running / max(1, steps), "heldout": overall})
         print(
             f"epoch {epoch}: loss {running / max(1, steps):.4f} "
@@ -245,6 +280,16 @@ def main() -> None:
         if overall > best:
             best = overall
             torch.save(model.state_dict(), run_dir / "model.pt")
+        torch.save(
+            {
+                "model": model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "epoch": epoch,
+                "best": best,
+                "history": history,
+            },
+            last_path,
+        )
 
     # Reload the best checkpoint for export.
     model.load_state_dict(torch.load(run_dir / "model.pt", weights_only=True))
