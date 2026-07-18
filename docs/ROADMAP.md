@@ -71,14 +71,41 @@ The demo becomes real: a position on screen, analyzed locally.
 - [x] Image-to-FEN v1: /api/scan (Haiku vision behind the same gates as
       explain; model output validated by chess.js, never trusted); client
       downscales to 1024px; confirm screen = board editor beside the photo,
-      side-to-move set by the user. Verified e2e (screenshot of our own board
-      -> exact FEN). Client-side ONNX CV model is the designed v2 upgrade
-      (zero cost, zero abuse surface, privacy win).
+      side-to-move set by the user. Verified e2e on a clean screenshot, but
+      accuracy on real screenshots is POOR (misplaced pieces, wrong colors) —
+      superseded by the Phase 2.5 client-side CV model.
 - [x] Deploy: static export + Worker, wired to chess.jianrontan.com; live
       Haiku explanations (API key as Worker secret, real request verified)
 - Done when: the full user experience works end to end on the public site with
   abuse protection on. ✅ 2026-07-18 — live Haiku explanations confirmed by a
   human in prod, all gates active, non-Chromium fallback verified e2e.
+
+## Phase 2.5 — Client-side board recognition (screenshot scan v2)
+
+Vision LLMs are unreliable at 8x8 transcription; digital screenshots are a
+solved CV problem. A small CNN runs in the visitor's browser (ONNX Runtime
+Web): zero API cost, no Turnstile, the image never leaves their machine.
+Physical-photo support is explicitly OUT of scope. The training-data trick is
+the project's signature move: we control the renderer, so labeled data is free.
+
+- [ ] Data generator (`pipeline/vision`): render puzzle-DB FENs across many
+      piece sets + board themes (Lichess open-licensed sets), coordinates
+      on/off, highlights; augment with JPEG artifacts, rescaling, crop jitter
+- [ ] Per-square CNN (13 classes, ~300k params), ONNX export + quantization
+      (target <500KB asset)
+- [ ] *Accuracy gate: >=99.5% square-level on HELD-OUT piece sets/themes +
+      a hand-collected set of real Lichess/chess.com screenshots; the model
+      ships only when the gate report passes (report lives in the repo)
+- [ ] Browser runtime: onnxruntime-web (lazy-loaded, cached), board-bounds
+      auto-detect + draggable crop box, wired behind "Scan image"; editor
+      confirm screen stays as the safety net
+- [ ] Side-by-side eval vs the LLM scan on the same screenshot set; retire
+      /api/scan when CV wins
+- [ ] Board editor v2 (NCM-style): free drag with explicit castling/side
+      controls, PGN import, promotion-aware material validation (planned
+      separately — see DECISIONS.md when it lands)
+- Done when: a Lichess/chess.com screenshot scans correctly client-side and
+  the gate report is committed.
 
 ## Phase 3 — Eval harness (pipeline)
 
@@ -144,7 +171,8 @@ The differentiator. Build it before RAG so RAG has a scoreboard on arrival.
 
 ## Later / out of scope for v1
 
-- Client-side ONNX board-recognition model replacing the vision-LLM scan
+- Physical-board photo recognition (perspective correction + 3D piece sets —
+  research-grade; screenshots-only is the supported scan path)
 - Fine-tune a small model on an annotated-commentary corpus and eval it against RAG
 - Full-game review mode (annotate every move of a PGN, chess.com game report)
 - Opening-theory corpus; user accounts; explanation history

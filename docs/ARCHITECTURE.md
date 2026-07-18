@@ -37,20 +37,23 @@ explanation. The confirm screen is designed to make errors findable and fixable:
 - explicit **side-to-move and castling-rights inputs** — an image fundamentally
   cannot supply these, so the UI asks rather than guesses.
 
-Two honest caveats. First, angled photos of physical boards are best-effort;
-clean screenshots are the reliable case. Second, the vision call is metered and
-is an upload endpoint, so it sits behind the same abuse protections as the
-explain endpoint.
+v1 verdict (2026-07-18, in production): vision-LLM transcription proved POOR on
+real screenshots — misplaced pieces and wrong colors, worse than the design
+anticipated. The v2 below is therefore scheduled now (ROADMAP Phase 2.5), not
+deferred, and physical-photo support is explicitly dropped.
 
-The designed v2 upgrade is a **traditional open-source CV model running
-client-side** (board detection + per-square piece classifier, compiled to run in
-the browser via ONNX Runtime Web — the approach of projects like chesscog and
-LiveChess2FEN). That path costs nothing per scan, has no abuse surface, and the
-image never leaves the user's device — the same "compute in the visitor's
-browser" principle as the engine. It is deferred, not chosen first, because it
-is days-to-weeks of work (piece-set variety across chess sites is the hard
-part) versus a day for the vision-LLM route, and the confirmation UI is
-required in both designs anyway.
+v2 (decided): a **small per-square CNN running client-side** (13 classes,
+trained on rendered boards, compiled to ONNX Runtime Web — the
+screenshot-scale version of the chesscog/LiveChess2FEN approach). Digital
+screenshots are axis-aligned grids, so no perspective correction is needed —
+board-bounds detection + a user-adjustable crop box, then 64 square crops
+through the classifier. Training data is generated, not annotated: we render
+puzzle-DB FENs across many piece sets and themes, so labels are free and a
+held-out-theme accuracy gate is cheap to run. Costs nothing per scan, has no
+abuse surface, and the image never leaves the user's device — the same
+"compute in the visitor's browser" principle as the engine. The confirmation
+UI remains in both designs; /api/scan stays as the fallback until the CV
+model beats it side by side.
 
 From there, there are two interaction modes — the same two a chess.com analysis
 board offers:
