@@ -10,6 +10,7 @@
  */
 
 import { BudgetCounter } from "./budget";
+import { clearanceSetCookie, clearanceValid } from "./lib/clearance";
 import { buildPrompt, PROMPT_VERSION } from "./lib/prompt";
 import { DEFAULT_MODEL, providerFromEnv, type ProviderEnv } from "./lib/providers";
 import { boardToFen, parseScanRequest, SCAN_CAPS, scanWithAnthropic } from "./lib/scan";
@@ -42,12 +43,65 @@ async function spendGate(request: Request, env: Env): Promise<Response | null> {
     if (!success) return jsonError("too many requests — try again in a minute", 429);
   }
   if (env.TURNSTILE_SECRET_KEY) {
+    // Per-request token (Chromium invisible path) OR a pre-clearance cookie
+    // issued by /api/verify (the one-time detour for other browsers).
     const token = request.headers.get("x-turnstile-token");
-    if (!(await turnstileOk(env.TURNSTILE_SECRET_KEY, token, ip))) {
+    const ok = token
+      ? await turnstileOk(env.TURNSTILE_SECRET_KEY, token, ip)
+      : await clearanceValid(env.TURNSTILE_SECRET_KEY, request.headers.get("cookie"));
+    if (!ok) {
       return jsonError("verification failed — refresh the page and try again", 403);
     }
   }
   return null;
+}
+
+/**
+ * Pre-clearance endpoint. GET reports whether the caller already holds a
+ * valid clearance cookie; POST {token} verifies a Turnstile token minted on
+ * the top-level /turnstile page and answers with a Set-Cookie clearance.
+ */
+async function handleVerify(request: Request, env: Env): Promise<Response> {
+  if (!env.TURNSTILE_SECRET_KEY) {
+    // No enforcement configured — everything is implicitly cleared.
+    return Response.json({ cleared: true });
+  }
+  if (request.method === "GET") {
+    const cleared = await clearanceValid(
+      env.TURNSTILE_SECRET_KEY,
+      request.headers.get("cookie"),
+    );
+    return Response.json({ cleared });
+  }
+  if (request.method !== "POST") {
+    return jsonError("method not allowed", 405);
+  }
+  if (env.EXPLAIN_RATELIMIT) {
+    const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
+    const { success } = await env.EXPLAIN_RATELIMIT.limit({ key: ip });
+    if (!success) return jsonError("too many requests — try again in a minute", 429);
+  }
+  let token: unknown;
+  try {
+    const body: unknown = await request.json();
+    token = (body as Record<string, unknown> | null)?.token;
+  } catch {
+    return jsonError("invalid JSON", 400);
+  }
+  if (typeof token !== "string") return jsonError("token required", 400);
+  const ip = request.headers.get("cf-connecting-ip");
+  if (!(await turnstileOk(env.TURNSTILE_SECRET_KEY, token, ip))) {
+    return jsonError("verification failed", 403);
+  }
+  return Response.json(
+    { cleared: true },
+    {
+      headers: {
+        "set-cookie": await clearanceSetCookie(env.TURNSTILE_SECRET_KEY),
+        "x-content-type-options": "nosniff",
+      },
+    },
+  );
 }
 
 /**
@@ -228,6 +282,10 @@ export default {
 
     if (url.pathname === "/api/scan") {
       return handleScan(request, env);
+    }
+
+    if (url.pathname === "/api/verify") {
+      return handleVerify(request, env);
     }
 
     return jsonError("not found", 404);

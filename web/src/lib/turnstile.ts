@@ -111,13 +111,25 @@ async function mintOnce(): Promise<string | null> {
 // instead of cancelling each other.
 let mintChain: Promise<unknown> = Promise.resolve();
 
+/** Chromium-only feature gate for the invisible per-request path. */
+export function supportsCredentialless(): boolean {
+  return (
+    typeof HTMLIFrameElement !== "undefined" &&
+    "credentialless" in HTMLIFrameElement.prototype
+  );
+}
+
 /**
  * Mint a fresh single-use token, or null if Turnstile is unavailable
- * (unsupported browser, network failure, challenge rejection). The Worker
- * rejects tokenless requests with 403 when enforcement is on.
+ * (unsupported browser, network failure, challenge rejection). On
+ * non-Chromium browsers this resolves null immediately — those requests
+ * rely on the pre-clearance cookie from the /turnstile detour instead,
+ * which the browser attaches automatically.
  */
 export function getTurnstileToken(): Promise<string | null> {
-  if (typeof window === "undefined") return Promise.resolve(null);
+  if (typeof window === "undefined" || !supportsCredentialless()) {
+    return Promise.resolve(null);
+  }
   const p = mintChain.then(() => mintOnce());
   mintChain = p.catch(() => null);
   return p;

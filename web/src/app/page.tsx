@@ -19,6 +19,7 @@ import {
 } from "@/lib/explain";
 import { flipSideToMove } from "@/lib/engine/fen";
 import { fileToDataUrl, scanImage } from "@/lib/scan";
+import { supportsCredentialless } from "@/lib/turnstile";
 
 const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
@@ -71,6 +72,17 @@ export default function Home() {
   // "Explain for <other side>": engine must first analyze the flipped-side
   // position, so this has its own busy state.
   const [otherSideBusy, setOtherSideBusy] = useState(false);
+  // Non-Chromium browsers can't run the invisible per-request Turnstile;
+  // they need a one-time top-level verification (/turnstile detour) which
+  // sets a clearance cookie. Show the prompt only when actually needed.
+  const [needsVerify, setNeedsVerify] = useState(false);
+  useEffect(() => {
+    if (supportsCredentialless()) return;
+    fetch("/api/verify")
+      .then((r) => (r.ok ? r.json() : { cleared: true }))
+      .then((d: { cleared?: boolean }) => setNeedsVerify(d.cleared === false))
+      .catch(() => {}); // offline/dev without worker — no banner
+  }, []);
 
   const sideToMove = useMemo(() => (fen.split(" ")[1] === "b" ? "b" : "w"), [fen]);
   // Derived from FEN alone (render must not read the ref). Note: threefold
@@ -263,6 +275,20 @@ export default function Home() {
     // during a piece drag).
     <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-6 p-6">
       <h1 className="text-2xl font-semibold">Chess Explanation Engine</h1>
+
+      {needsVerify && (
+        <Card>
+          <CardContent className="flex flex-wrap items-center gap-3 text-sm">
+            <span>
+              Your browser needs a quick one-time verification before
+              explanations and scans will work.
+            </span>
+            <Button size="sm" onClick={() => window.location.assign("/turnstile")}>
+              Verify now
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* The board column is FIXED width, and items-start stops the default
           grid stretch: without it the left column is stretched to the height

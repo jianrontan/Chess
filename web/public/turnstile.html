@@ -4,13 +4,20 @@
 <meta charset="utf-8">
 <title>verification</title>
 <!--
-  Turnstile host page. Loaded by the app inside a CREDENTIALLESS iframe so
+  Turnstile host page, two modes:
+
+  IFRAME MODE (Chromium): loaded by the app inside a CREDENTIALLESS iframe so
   the widget's challenge frames escape the main page's COEP (which the
   threaded engine requires). Served WITHOUT COOP/COEP — see _headers.
   Protocol (same-origin postMessage only):
     parent -> here : { type: "turnstile-mint", id }
     here -> parent : { type: "turnstile-ready" } once the widget is rendered
     here -> parent : { type: "turnstile-token", id, token: string | null }
+
+  DETOUR MODE (everything else): opened as a TOP-LEVEL page (no COEP applies
+  there, so the widget runs in any browser). Mints one token, trades it at
+  /api/verify for a signed clearance cookie, then returns to the app. The
+  spend gate accepts that cookie in place of a per-request token.
 -->
 <script>
   var PROD_SITEKEY = "0x4AAAAAAD38qd1vpULAPPXA";
@@ -48,18 +55,65 @@
     window.turnstile.execute(widgetId);
   });
 
+  var detour = window.parent === window; /* top-level = detour mode */
+
+  function setStatus(text) {
+    var el = document.getElementById("status");
+    if (el) el.textContent = text;
+  }
+
+  function detourComplete(token) {
+    if (!token) {
+      setStatus("Verification failed. Go back and try again, or use Chrome/Edge.");
+      return;
+    }
+    fetch("/api/verify", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token: token }),
+    })
+      .then(function (res) {
+        if (!res.ok) throw new Error("verify " + res.status);
+        setStatus("Verified — taking you back…");
+        window.location.replace("/");
+      })
+      .catch(function () {
+        setStatus("Verification could not be saved. Go back and try again.");
+      });
+  }
+
   function onTurnstileLoad() {
     widgetId = window.turnstile.render("#widget", {
       sitekey: sitekey,
       action: "turnstile-spin-v1",
       execution: "execute",
-      callback: function (token) { finish(token); },
-      "error-callback": function () { finish(null); },
+      callback: function (token) {
+        if (detour) detourComplete(token);
+        else finish(token);
+      },
+      "error-callback": function () {
+        if (detour) detourComplete(null);
+        else finish(null);
+      },
     });
-    send({ type: "turnstile-ready" });
+    if (detour) {
+      setStatus("Verifying your browser…");
+      window.turnstile.execute(widgetId);
+    } else {
+      send({ type: "turnstile-ready" });
+    }
   }
 </script>
 <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad&render=explicit" async defer></script>
+<style>
+  body { font-family: system-ui, sans-serif; display: grid; place-items: center; min-height: 90vh; margin: 0; }
+  #status { color: #555; font-size: 0.95rem; }
+</style>
 </head>
-<body><div id="widget"></div></body>
+<body>
+  <div>
+    <div id="widget"></div>
+    <p id="status"></p>
+  </div>
+</body>
 </html>
