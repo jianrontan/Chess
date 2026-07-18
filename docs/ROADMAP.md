@@ -54,10 +54,12 @@ The demo becomes real: a position on screen, analyzed locally.
 - [x] Cloudflare Worker: `/api/explain` endpoint, provider-agnostic LLM client
       (Anthropic + deterministic fake; fake runs until a key exists), API key in
       Worker env (`.dev.vars` locally), same-origin route under the app's domain
-- [ ] *Abuse protection BEFORE the endpoint is public: Turnstile + provider-side
-      monthly spend limit (user-set). Already shipped: payload caps,
-      `max_tokens` cap, per-IP rate limit (10/min), global daily budget
-      (Durable Object counter, `DAILY_BUDGET`/day worker-wide)
+- [x] *Abuse protection: payload caps, `max_tokens` cap, per-IP rate limit
+      (10/min), global daily budget (Durable Object, `DAILY_BUDGET`/day),
+      invisible Turnstile on every LLM endpoint (credentialless-iframe host
+      page — Turnstile can't run under the engine's COEP; Chromium-only v1,
+      pre-clearance detour page is the designed fix).
+      Remaining (user): provider-side monthly spend limit in the console.
 - [x] *Worker validates client input: replay candidate/PV moves for legality
       (chess.js), clamp evals, payload caps (k≤5, PV≤12, 16KB body), treat
       evals as "client-reported"; prompt built only from our re-serialization
@@ -66,11 +68,12 @@ The demo becomes real: a position on screen, analyzed locally.
 - [x] Streaming response into the UI (provider chunks → chunked text response →
       streamed into the explanation card; "Explain position" + "Explain this
       move" buttons)
-- [ ] Image-to-FEN v1: vision-LLM call via the Worker; confirm screen shows the
-      transcribed board BESIDE the uploaded image with click-to-fix squares,
-      one-click orientation flip, and explicit side-to-move + castling inputs
-      (an image cannot supply those). Client-side ONNX CV model is the designed
-      v2 upgrade (zero cost, zero abuse surface, privacy win).
+- [x] Image-to-FEN v1: /api/scan (Haiku vision behind the same gates as
+      explain; model output validated by chess.js, never trusted); client
+      downscales to 1024px; confirm screen = board editor beside the photo,
+      side-to-move set by the user. Verified e2e (screenshot of our own board
+      -> exact FEN). Client-side ONNX CV model is the designed v2 upgrade
+      (zero cost, zero abuse surface, privacy win).
 - [x] Deploy: static export + Worker, wired to chess.jianrontan.com; live
       Haiku explanations (API key as Worker secret, real request verified)
 - Done when: the full user experience works end to end on the public site with
