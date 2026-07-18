@@ -7,7 +7,6 @@
     "dev": "next dev",
     "prebuild": "node scripts/copy-engine.mjs",
     "build": "next build",
-    "start": "next start",
     "lint": "eslint",
     "preview": "pnpm build && wrangler dev",
     "deploy": "pnpm build && wrangler deploy",

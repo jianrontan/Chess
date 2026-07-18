@@ -59,6 +59,12 @@ env/
 # licenses are recorded in vision/PIECE_LICENSES.json (committed).
 vision/assets/
 vision/runs/
+# Model artifacts anywhere (defense in depth — training normally writes to
+# vision/runs/, but a stray checkpoint must never land in git)
+*.onnx
+*.pt
+*.pth
+checkpoints/
 
 # ---------- Chess data & artifacts (large / regenerable) ----------
 # Raw corpora and puzzle DBs are huge — keep them out of git.
