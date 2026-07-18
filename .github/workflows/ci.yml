@@ -39,3 +39,26 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pytest -q
+
+  vision:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vision
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      # Render tests need the sprites; regenerate them in CI (sparse lila
+      # clone + rasterize) so the round-trip suite actually runs.
+      - run: |
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/lichess-org/lila /tmp/lila
+          git -C /tmp/lila sparse-checkout set public/piece
+          uv sync --locked --group raster
+          uv run python -m vision.pieces /tmp/lila/public/piece
+          uv run python -m vision.sprites
+      - run: uv run pytest -q

@@ -1,0 +1,130 @@
+{
+  "anarcandy": {
+    "author": "caderek",
+    "license": "CC BY-NC-SA 4.0"
+  },
+  "caliente": {
+    "author": "avi",
+    "license": "CC BY-NC-SA 4.0"
+  },
+  "california": {
+    "author": "Jerry S.",
+    "license": "CC BY-NC-SA 4.0"
+  },
+  "cardinal": {
+    "author": "sadsnake1",
+    "license": "CC BY-NC-SA 4.0"
+  },
+  "cburnett": {
+    "author": "Colin M.L. Burnett",
+    "license": "GPLv2+"
+  },
+  "celtic": {
+    "author": "Maurizio Monge",
+    "license": "MIT"
+  },
+  "chessnut": {
+    "author": "Alexis Luengas",
+    "license": "Apache 2.0"
+  },
+  "cooke": {
+    "author": "fejfar",
+    "license": "CC BY-NC-SA 4.0"
+  },
+  "dubrovny": {
+    "author": "sadsnake1",
+    "license": "CC BY-NC-SA 4.0"
+  },
+  "fantasy": {
+    "author": "Maurizio Monge",
+    "license": "MIT"
+  },
+  "firi": {
+    "author": "James Faure",
+    "license": "CC BY 4.0"
+  },
+  "fresca": {
+    "author": "sadsnake1",
+    "license": "CC BY-NC-SA 4.0"
+  },
+  "gioco": {
+    "author": "sadsnake1",
+    "license": "CC BY-NC-SA 4.0"
+  },
+  "governor": {
+    "author": "sadsnake1",
+    "license": "CC BY-NC-SA 4.0"
+  },
+  "horsey": {
+    "author": "cham, michael1241",
+    "license": "CC BY-NC-SA 4.0"
+  },
+  "icpieces": {
+    "author": "sadsnake1",
+    "license": "CC BY-NC-SA 4.0"
+  },
+  "kiwen-suwi": {
+    "author": "neverRare",
+    "license": "CC BY 4.0"
+  },
+  "kosal": {
+    "author": "Kosal Sen",
+    "license": "CC BY 4.0"
+  },
+  "letter": {
+    "author": "usolando",
+    "license": "AGPLv3+"
+  },
+  "maestro": {
+    "author": "sadsnake1",
+    "license": "CC BY-NC-SA 4.0"
+  },
+  "merida": {
+    "author": "Armando Hernandez Marroquin",
+    "license": "GPLv2+"
+  },
+  "mpchess": {
+    "author": "Maxime Chupin",
+    "license": "GPLv3+"
+  },
+  "papercut": {
+    "author": "Nikolay Anzarov",
+    "license": "CC BY 4.0"
+  },
+  "pirouetti": {
+    "author": "pirouetti",
+    "license": "AGPLv3+"
+  },
+  "pixel": {
+    "author": "therealqtpi",
+    "license": "AGPLv3+"
+  },
+  "rhosgfx": {
+    "author": "RhosGFX",
+    "license": "CC0 1.0"
+  },
+  "shapes": {
+    "author": "flugsio",
+    "license": "CC BY-SA 4.0"
+  },
+  "spatial": {
+    "author": "Maurizio Monge",
+    "license": "MIT"
+  },
+  "staunty": {
+    "author": "sadsnake1",
+    "license": "CC BY-NC-SA 4.0"
+  },
+  "tatiana": {
+    "author": "sadsnake1",
+    "license": "CC BY-NC-SA 4.0"
+  },
+  "totoy": {
+    "author": "Kosal Sen",
+    "license": "CC BY 4.0"
+  },
+  "xkcd": {
+    "author": "Randall Munroe",
+    "license": "CC BY-NC 2.5"
+  }
+}

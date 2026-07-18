@@ -35,6 +35,9 @@ LLM-judge. Headline result = explanation accuracy **with vs without RAG**.
 - `/pipeline` — Python. Offline data parsing, feature extraction, embeddings, eval.
   Runs on the homelab, never in production.
 - `/web` — TypeScript. The live app.
+- `/vision` — Python (separate uv project; isolates heavy ML deps from
+  `/pipeline`). Board-recognition subproject: generated training data,
+  per-square CNN, ONNX export for the in-browser screenshot scan.
 - `/docs` — design docs; `docs/ARCHITECTURE.md` is the definitive system design.
   Two interaction modes: "what should I play?" (MultiPV top-k candidates + PVs)
   and "let me try a move" (chess.com-style grading: eval delta classification +

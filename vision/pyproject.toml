@@ -1,0 +1,36 @@
+[project]
+name = "vision"
+version = "0.1.0"
+description = "Board-recognition subproject: generated training data, per-square CNN, ONNX export"
+readme = "README.md"
+authors = [
+    { name = "jianrontan", email = "116509027+jianrontan@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "python-chess>=1.999",
+    "pillow>=11.0.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.28,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.15.21",
+]
+# Rasterizing the SVG piece sets to PNG sprites (prepare_sprites). cairosvg
+# needs native cairo — easy on Linux/homelab, can be flaky on Windows; the
+# Edge fallback (scripts/rasterize-edge.mjs) covers Windows if so.
+raster = [
+    "cairosvg>=2.7.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]

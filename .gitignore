@@ -54,6 +54,12 @@ env/
 .mypy_cache/
 .ipynb_checkpoints/
 
+# ---------- Vision subproject (regenerable assets & datasets) ----------
+# Piece SVGs/sprites come from the lila checkout via vision.pieces/sprites;
+# licenses are recorded in vision/PIECE_LICENSES.json (committed).
+vision/assets/
+vision/runs/
+
 # ---------- Chess data & artifacts (large / regenerable) ----------
 # Raw corpora and puzzle DBs are huge — keep them out of git.
 data/
