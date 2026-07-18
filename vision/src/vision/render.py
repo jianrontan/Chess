@@ -80,11 +80,16 @@ class BoardRenderer:
         return sorted(p.name for p in self.sprites_dir.iterdir() if p.is_dir())
 
     def _sprite(self, piece_set: str, code: str, size: int) -> Image.Image:
-        key = (piece_set, code, size)
+        # Cache ONLY the base-size sprite (bounded: sets x 12 entries) and
+        # resize per call — caching per (set, code, size) with random sizes
+        # grew to hundreds of MB and killed a 44k-board build on a loaded
+        # machine. The resize is microseconds; memory is the scarce thing.
+        key = (piece_set, code, 0)
         if key not in self._cache:
-            img = Image.open(self.sprites_dir / piece_set / f"{code}.png").convert("RGBA")
-            self._cache[key] = img.resize((size, size), Image.LANCZOS)
-        return self._cache[key]
+            self._cache[key] = Image.open(self.sprites_dir / piece_set / f"{code}.png").convert(
+                "RGBA"
+            )
+        return self._cache[key].resize((size, size), Image.LANCZOS)
 
     def render(self, spec: RenderSpec) -> tuple[Image.Image, list[list[int]]]:
         """Render one board -> (RGB image, 8x8 label grid).
