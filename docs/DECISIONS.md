@@ -212,3 +212,26 @@ time alongside chess.js FEN validation and the impossible-check test.
 **PGN import** loads the FINAL position only (no move scrubbing — that's a
 separate feature if ever needed). En passant stays "-": editor positions have
 no move history.
+
+## 2026-07-18 — Material-rules sweep (agent audit) closed two gaps
+
+**Audit:** two-lens agent sweep (chess material theory / entry-point
+coverage), every claimed gap judged before acting. Confirmed and fixed:
+
+1. **Bishop square-color accounting.** Bishops were pooled (initial 2), so
+   two LIGHT-squared bishops with all 8 pawns passed. Bishops never change
+   square color and the starting pair is one per color, so a same-color
+   second bishop is a promotion. Now counted per complex:
+   `max(0, light-1) + max(0, dark-1)` feeds the shared promotion budget.
+2. **FEN paste bypassed materialError** — a pasted 9-pawn FEN went straight
+   to the engine. The paste box now enforces the same rule as the editor.
+
+**Also learned (test-derived):** 8 queens + 0 pawns is LEGAL (1 original +
+up to 8 promoted; the true ceiling is 9 queens) — an auditor example claimed
+otherwise and the unit test caught it. The boundary tests now encode 9Q legal
+/ 10Q impossible.
+
+**Scope confirmed:** only physical material impossibility is enforced.
+Unreachable-but-material-legal positions (pawn structures needing impossible
+capture counts, unreachable castling states, retrograde arguments) are
+deliberately allowed — same stance as chess.com/lichess editors.

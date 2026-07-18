@@ -85,6 +85,45 @@ describe("materialError", () => {
     const p = placement("rnbqkbnr/pppppppp/3q4/8/8/8/PPPPPPPP/RNBQKBNR w - - 0 1");
     expect(materialError(p)).toMatch(/Black/);
   });
+
+  it("rejects two SAME-colored-square bishops with all 8 pawns", () => {
+    // d1 and f1 are both light squares — the second light bishop must be a
+    // promotion, but no pawn is missing. (Sweep finding.)
+    const p = placement("4k3/8/8/8/8/8/PPPPPPPP/3BKB2 w - - 0 1");
+    expect(materialError(p)).toMatch(/same square color/);
+  });
+
+  it("accepts the normal opposite-colored bishop pair with 8 pawns", () => {
+    const p = placement("4k3/8/8/8/8/8/PPPPPPPP/2B1KB2 w - - 0 1");
+    expect(materialError(p)).toBeNull();
+  });
+
+  it("rejects three same-colored bishops when only one pawn is missing", () => {
+    // d1, f1, f3 all light: needs TWO promotions, only one pawn missing.
+    const p = placement("4k3/8/8/8/8/5B2/PPPPPPP1/3BKB2 w - - 0 1");
+    expect(materialError(p)).toMatch(/impossible/);
+  });
+
+  it("accepts two same-colored bishops when a pawn is missing (one promotion)", () => {
+    const p = placement("4k3/8/8/8/8/8/PPPPPPP1/3BKB2 w - - 0 1");
+    expect(materialError(p)).toBeNull();
+  });
+
+  it("bishop demand shares the budget with other extras", () => {
+    // 2 queens (1 extra) + 2 light bishops (1 extra) but only 1 missing pawn.
+    const p = placement("4k3/8/8/8/8/2Q2Q2/PPPPPPP1/3BKB2 w - - 0 1");
+    expect(materialError(p)).toMatch(/impossible/);
+  });
+
+  it("accepts 9 queens with 0 pawns (the true maximum: 1 original + 8 promoted)", () => {
+    const p = placement("4k3/QQQQQQQQ/Q7/8/8/8/8/4K3 w - - 0 1");
+    expect(materialError(p)).toBeNull();
+  });
+
+  it("rejects 10 queens (9 extras, only 8 possible promotions)", () => {
+    const p = placement("4k3/QQQQQQQQ/QQ6/8/8/8/8/4K3 w - - 0 1");
+    expect(materialError(p)).toMatch(/impossible/);
+  });
 });
 
 describe("buildEditorFen", () => {

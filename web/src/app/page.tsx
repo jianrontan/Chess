@@ -17,6 +17,7 @@ import {
   streamExplanation,
   type ExplainState,
 } from "@/lib/explain";
+import { materialError } from "@/lib/editor";
 import { flipSideToMove } from "@/lib/engine/fen";
 import { fileToDataUrl, scanImage } from "@/lib/scan";
 import { supportsCredentialless } from "@/lib/turnstile";
@@ -196,7 +197,16 @@ export default function Home() {
     const candidate = fenInput.trim();
     if (!candidate) return;
     try {
-      gameRef.current = new Chess(candidate);
+      const game = new Chess(candidate);
+      // chess.js checks structure/kings/back-rank pawns but not material —
+      // the paste box must enforce the same rules as the editor (a pasted
+      // 9-pawn or 8-queen FEN otherwise goes straight to the engine).
+      const material = materialError(game);
+      if (material) {
+        setFenError(material);
+        return;
+      }
+      gameRef.current = game;
       setFen(gameRef.current.fen());
       setFenInput("");
       setFenError("");

@@ -56,27 +56,39 @@ function castlingField(choice: CastlingChoice, avail: CastlingChoice): string {
   return rights || "-";
 }
 
-/** Starting-army counts used for promotion accounting. */
+/** Starting-army counts used for promotion accounting (bishops are handled
+ * separately, per square color — the starting pair is one light + one dark). */
 const INITIAL_COUNTS: Partial<Record<PieceSymbol, number>> = {
   q: 1,
   r: 2,
-  b: 2,
   n: 2,
 };
 
 /**
  * Reject impossible armies while allowing promotion-legal ones: every piece
  * beyond the starting set must be paid for by a missing pawn (a promotion).
- * 8 pawns + 2 queens is impossible; 7 pawns + 2 queens is fine.
+ * 8 pawns + 2 queens is impossible; 7 pawns + 2 queens is fine. Bishops are
+ * counted per square color: a second LIGHT-squared bishop needs a promotion
+ * even if the total is still two (bishops never change square color).
  * Returns a human-readable error, or null when the material is possible.
  */
 export function materialError(placement: Chess): string | null {
   for (const color of ["w", "b"] as Color[]) {
     const name = color === "w" ? "White" : "Black";
     const counts: Record<string, number> = {};
-    for (const row of placement.board()) {
-      for (const sq of row) {
-        if (sq && sq.color === color) counts[sq.type] = (counts[sq.type] ?? 0) + 1;
+    let lightBishops = 0;
+    let darkBishops = 0;
+    const board = placement.board();
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const sq = board[r][c];
+        if (!sq || sq.color !== color) continue;
+        counts[sq.type] = (counts[sq.type] ?? 0) + 1;
+        if (sq.type === "b") {
+          // board() row 0 = rank 8; (r + c) even = light square (h1, d1…).
+          if ((r + c) % 2 === 0) lightBishops++;
+          else darkBishops++;
+        }
       }
     }
     const pawns = counts.p ?? 0;
@@ -87,11 +99,17 @@ export function materialError(placement: Chess): string | null {
     for (const [type, initial] of Object.entries(INITIAL_COUNTS)) {
       extras += Math.max(0, (counts[type] ?? 0) - (initial as number));
     }
+    const bishopExtras = Math.max(0, lightBishops - 1) + Math.max(0, darkBishops - 1);
+    extras += bishopExtras;
     const promotions = 8 - pawns;
     if (extras > promotions) {
+      const bishopHint =
+        bishopExtras > 0 && (lightBishops > 1 || darkBishops > 1)
+          ? " (a second bishop on the same square color counts as promoted)"
+          : "";
       return (
         `${name} has ${extras} more piece${extras === 1 ? "" : "s"} than the starting set ` +
-        `but only ${promotions} missing pawn${promotions === 1 ? "" : "s"} to promote — impossible.`
+        `but only ${promotions} missing pawn${promotions === 1 ? "" : "s"} to promote — impossible${bishopHint}.`
       );
     }
   }
