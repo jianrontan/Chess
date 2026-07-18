@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { cpToWinPct, gradePlayedMove, lineWinPct } from "./grading";
+import type { MoveClass } from "./grading";
 import type { EngineLine } from "./types";
 
 function line(overrides: Partial<EngineLine>): EngineLine {
@@ -85,5 +86,52 @@ describe("gradePlayedMove", () => {
     // 35cp -> -250cp is a ~25 win% drop
     const played = line({ cp: -250, pv: ["b2b4"] });
     expect(gradePlayedMove(best, played, "w").moveClass).toBe("mistake");
+  });
+});
+
+describe("gradePlayedMove — class boundaries", () => {
+  // THRESHOLDS in grading.ts are checked as `drop >= threshold`, most severe
+  // first: >=30 blunder, >=20 mistake, >=10 inaccuracy, else good.
+  //
+  // Lichess win% is winPct(cp) = 100 / (1 + exp(-0.00368208*cp)). We anchor the
+  // best line at cp 0 (exactly 50%), so the mover's drop == 50 - winPct(played).
+  // Solving winPct(played) for each target drop, then nudging just over / under
+  // the boundary (cp is integer here, so exact-threshold ties don't arise):
+  //
+  //   drop 10 boundary (inaccuracy): winPct 40 at cp = -110.1
+  //     cp -111 -> winPct 39.92 -> drop 10.08 (>=10 -> inaccuracy)
+  //     cp -109 -> winPct 40.10 -> drop  9.90 (<10  -> good)
+  //   drop 20 boundary (mistake):    winPct 30 at cp = -230.1
+  //     cp -231 -> winPct 29.93 -> drop 20.07 (>=20 -> mistake)
+  //     cp -229 -> winPct 30.09 -> drop 19.91 (<20  -> inaccuracy)
+  //   drop 30 boundary (blunder):    winPct 20 at cp = -376.5
+  //     cp -378 -> winPct 19.91 -> drop 30.09 (>=30 -> blunder)
+  //     cp -375 -> winPct 20.09 -> drop 29.91 (<30  -> mistake)
+  const bestEven = line({ cp: 0, pv: ["e2e4", "e7e5"] });
+
+  // Both movers exercised: cp is already mover-relative (same side to move for
+  // best and played), so the classification math is identical either way — the
+  // `mover` field is just recorded. We assert both to lock that in.
+  const cases: ReadonlyArray<{ cp: number; expected: MoveClass; note: string }> = [
+    { cp: -109, expected: "good", note: "just under the inaccuracy boundary" },
+    { cp: -111, expected: "inaccuracy", note: "just over the inaccuracy boundary" },
+    { cp: -229, expected: "inaccuracy", note: "just under the mistake boundary" },
+    { cp: -231, expected: "mistake", note: "just over the mistake boundary" },
+    { cp: -375, expected: "mistake", note: "just under the blunder boundary" },
+    { cp: -378, expected: "blunder", note: "just over the blunder boundary" },
+  ];
+
+  for (const mover of ["w", "b"] as const) {
+    for (const { cp, expected, note } of cases) {
+      it(`${mover}-mover: cp ${cp} is ${expected} (${note})`, () => {
+        const played = line({ cp, pv: ["a2a3"] });
+        expect(gradePlayedMove(bestEven, played, mover).moveClass).toBe(expected);
+      });
+    }
+  }
+
+  it("the inaccuracy class is reachable", () => {
+    const played = line({ cp: -111, pv: ["a2a3"] });
+    expect(gradePlayedMove(bestEven, played, "w").moveClass).toBe("inaccuracy");
   });
 });
