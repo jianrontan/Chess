@@ -154,9 +154,10 @@ async function handleScan(request: Request, env: Env): Promise<Response> {
   const gated = await spendGate(request, env);
   if (gated) return gated;
 
-  if (!env.ANTHROPIC_API_KEY) {
-    return jsonError("image scanning is not configured on this deployment", 501);
-  }
+  // Same provider semantics as /api/explain: EXPLAIN_PROVIDER=fake (or no
+  // key) must guarantee zero LLM spend — scan answers with a mock instead
+  // of silently calling the paid vision API (review finding).
+  const fake = env.EXPLAIN_PROVIDER === "fake" || !env.ANTHROPIC_API_KEY;
 
   const declared = Number(request.headers.get("content-length") ?? "0");
   if (declared > SCAN_CAPS.bodyBytes) {
@@ -184,14 +185,19 @@ async function handleScan(request: Request, env: Env): Promise<Response> {
   }
 
   let rawBoard: string;
-  try {
-    rawBoard = await scanWithAnthropic(
-      env.ANTHROPIC_API_KEY,
-      env.EXPLAIN_MODEL ?? DEFAULT_MODEL,
-      parsed.image,
-    );
-  } catch {
-    return jsonError("the vision model is unavailable — try again shortly", 502);
+  if (fake) {
+    rawBoard = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR";
+  } else {
+    try {
+      rawBoard = await scanWithAnthropic(
+        // fake === false implies the key exists (see above).
+        env.ANTHROPIC_API_KEY as string,
+        env.EXPLAIN_MODEL ?? DEFAULT_MODEL,
+        parsed.image,
+      );
+    } catch {
+      return jsonError("the vision model is unavailable — try again shortly", 502);
+    }
   }
 
   const result = boardToFen(rawBoard);

@@ -26,6 +26,9 @@ export async function fileToDataUrl(file: File): Promise<string> {
     canvas.height = h;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("canvas unavailable");
+    // JPEG has no alpha — transparent PNG regions would encode as black.
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, w, h);
     ctx.drawImage(bitmap, 0, 0, w, h);
     return canvas.toDataURL("image/jpeg", JPEG_QUALITY);
   } finally {

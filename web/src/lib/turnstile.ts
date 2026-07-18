@@ -42,7 +42,12 @@ function onMessage(e: MessageEvent) {
   }
 }
 
-/** Create the hidden host iframe once; resolves true when the widget is ready. */
+/**
+ * Create the hidden host iframe; resolves true when the widget is ready.
+ * A FAILED bootstrap is NOT cached (review finding): the broken iframe is
+ * torn down and the next mint retries from scratch, so one slow network
+ * moment can't disable verification for the whole session.
+ */
 function ensureFrame(): Promise<boolean> {
   readyPromise ??= new Promise<boolean>((resolve) => {
     window.addEventListener("message", onMessage);
@@ -60,7 +65,13 @@ function ensureFrame(): Promise<boolean> {
     el.setAttribute("aria-hidden", "true");
     el.tabIndex = -1;
 
-    const timer = setTimeout(() => resolve(false), READY_TIMEOUT_MS);
+    const timer = setTimeout(() => {
+      window.removeEventListener("message", onReady);
+      el.remove();
+      frame = null;
+      readyPromise = null; // retry on the next mint
+      resolve(false);
+    }, READY_TIMEOUT_MS);
     const onReady = (e: MessageEvent) => {
       if (e.origin !== window.location.origin) return;
       if ((e.data as { type?: string } | undefined)?.type !== "turnstile-ready") return;
@@ -75,13 +86,7 @@ function ensureFrame(): Promise<boolean> {
   return readyPromise;
 }
 
-/**
- * Mint a fresh single-use token, or null if Turnstile is unavailable
- * (unsupported browser, network failure, challenge rejection). The Worker
- * rejects tokenless requests with 403 when enforcement is on.
- */
-export async function getTurnstileToken(): Promise<string | null> {
-  if (typeof window === "undefined") return null;
+async function mintOnce(): Promise<string | null> {
   const ready = await ensureFrame();
   if (!ready || !frame?.contentWindow) return null;
 
@@ -98,4 +103,22 @@ export async function getTurnstileToken(): Promise<string | null> {
     }, TOKEN_TIMEOUT_MS),
   );
   return Promise.race([result, timeout]);
+}
+
+// The widget mints one token at a time, and a new execute() cancels the
+// in-flight one (which surfaced as a spurious 403 on the earlier request —
+// review finding). Serialize mints so overlapping explain/scan calls queue
+// instead of cancelling each other.
+let mintChain: Promise<unknown> = Promise.resolve();
+
+/**
+ * Mint a fresh single-use token, or null if Turnstile is unavailable
+ * (unsupported browser, network failure, challenge rejection). The Worker
+ * rejects tokenless requests with 403 when enforcement is on.
+ */
+export function getTurnstileToken(): Promise<string | null> {
+  if (typeof window === "undefined") return Promise.resolve(null);
+  const p = mintChain.then(() => mintOnce());
+  mintChain = p.catch(() => null);
+  return p;
 }

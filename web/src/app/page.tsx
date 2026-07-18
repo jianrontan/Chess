@@ -258,6 +258,10 @@ export default function Home() {
                 </div>
               )}
               <BoardEditor
+                // Remount when a scan arrives: initialFen is only read at
+                // mount, so a scan completing while the editor is already
+                // open would otherwise be silently discarded.
+                key={scannedFen ?? "manual"}
                 initialFen={scannedFen ?? fen}
                 onApply={(newFen) => {
                   gameRef.current = new Chess(newFen);
@@ -308,7 +312,12 @@ export default function Home() {
                 >
                   Flip
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={scanBusy}
+                  onClick={() => setEditing(true)}
+                >
                   Edit board
                 </Button>
                 <Button
