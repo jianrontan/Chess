@@ -19,8 +19,15 @@ import { turnstileOk } from "./lib/turnstile";
 
 export { BudgetCounter };
 
-/** Default worker-wide explanations/day when DAILY_BUDGET isn't set. */
+/**
+ * Fallback worker-wide explanations/day when the DAILY_BUDGET var is unset.
+ * The deployed value lives in wrangler.jsonc `vars.DAILY_BUDGET` (with the
+ * cost rationale) — keep the two in sync.
+ */
 const DEFAULT_DAILY_BUDGET = 300;
+
+const BUDGET_EXHAUSTED_MESSAGE =
+  "the site's daily explanation budget is used up — try again tomorrow";
 
 interface Env extends ProviderEnv {
   ASSETS: Fetcher;
@@ -42,16 +49,30 @@ async function spendGate(request: Request, env: Env): Promise<Response | null> {
     const { success } = await env.EXPLAIN_RATELIMIT.limit({ key: ip ?? "unknown" });
     if (!success) return jsonError("too many requests — try again in a minute", 429);
   }
-  if (env.TURNSTILE_SECRET_KEY) {
-    // Per-request token (Chromium invisible path) OR a pre-clearance cookie
-    // issued by /api/verify (the one-time detour for other browsers).
-    const token = request.headers.get("x-turnstile-token");
-    const ok = token
-      ? await turnstileOk(env.TURNSTILE_SECRET_KEY, token, ip)
-      : await clearanceValid(env.TURNSTILE_SECRET_KEY, request.headers.get("cookie"));
-    if (!ok) {
-      return jsonError("verification failed — refresh the page and try again", 403);
-    }
+  if (!env.TURNSTILE_SECRET_KEY) {
+    // A missing Turnstile secret must FAIL CLOSED whenever real LLM spend is
+    // possible — otherwise a deploy that forgets the secret silently drops
+    // the bot gate. With the fake provider (no API key or EXPLAIN_PROVIDER=
+    // fake) there is nothing to spend, so local dev stays frictionless.
+    const spendPossible =
+      env.EXPLAIN_PROVIDER !== "fake" && Boolean(env.ANTHROPIC_API_KEY);
+    return spendPossible
+      ? jsonError("verification is not configured on this deployment", 503)
+      : null;
+  }
+  // Per-request token (Chromium invisible path) OR a pre-clearance cookie
+  // issued by /api/verify (the one-time detour for other browsers).
+  const token = request.headers.get("x-turnstile-token");
+  const ok = token
+    ? await turnstileOk(
+        env.TURNSTILE_SECRET_KEY,
+        token,
+        ip,
+        new URL(request.url).hostname,
+      )
+    : await clearanceValid(env.TURNSTILE_SECRET_KEY, request.headers.get("cookie"));
+  if (!ok) {
+    return jsonError("verification failed — refresh the page and try again", 403);
   }
   return null;
 }
@@ -63,15 +84,22 @@ async function spendGate(request: Request, env: Env): Promise<Response | null> {
  */
 async function handleVerify(request: Request, env: Env): Promise<Response> {
   if (!env.TURNSTILE_SECRET_KEY) {
-    // No enforcement configured — everything is implicitly cleared.
-    return Response.json({ cleared: true });
+    // No enforcement configured — everything is implicitly cleared. (When a
+    // real provider key exists, spendGate still fails closed regardless.)
+    return Response.json(
+      { cleared: true },
+      { headers: { "x-content-type-options": "nosniff" } },
+    );
   }
   if (request.method === "GET") {
     const cleared = await clearanceValid(
       env.TURNSTILE_SECRET_KEY,
       request.headers.get("cookie"),
     );
-    return Response.json({ cleared });
+    return Response.json(
+      { cleared },
+      { headers: { "x-content-type-options": "nosniff" } },
+    );
   }
   if (request.method !== "POST") {
     return jsonError("method not allowed", 405);
@@ -90,7 +118,8 @@ async function handleVerify(request: Request, env: Env): Promise<Response> {
   }
   if (typeof token !== "string") return jsonError("token required", 400);
   const ip = request.headers.get("cf-connecting-ip");
-  if (!(await turnstileOk(env.TURNSTILE_SECRET_KEY, token, ip))) {
+  const hostname = new URL(request.url).hostname;
+  if (!(await turnstileOk(env.TURNSTILE_SECRET_KEY, token, ip, hostname))) {
     return jsonError("verification failed", 403);
   }
   return Response.json(
@@ -130,6 +159,44 @@ function jsonError(message: string, status: number): Response {
   );
 }
 
+type CappedJson = { ok: true; body: unknown } | { ok: false; response: Response };
+
+/**
+ * Read + JSON-parse a request body, enforcing the byte cap WHILE reading —
+ * Content-Length is client-controlled (and absent on chunked bodies), so the
+ * cap must hold even when the header lies.
+ */
+async function readCappedJson(
+  request: Request,
+  capBytes: number,
+  tooLargeMessage: string,
+): Promise<CappedJson> {
+  const declared = Number(request.headers.get("content-length") ?? "0");
+  if (declared > capBytes) {
+    return { ok: false, response: jsonError(tooLargeMessage, 413) };
+  }
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  if (request.body) {
+    const reader = request.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.byteLength;
+      if (received > capBytes) {
+        await reader.cancel();
+        return { ok: false, response: jsonError(tooLargeMessage, 413) };
+      }
+      chunks.push(value);
+    }
+  }
+  try {
+    return { ok: true, body: JSON.parse(await new Blob(chunks).text()) as unknown };
+  } catch {
+    return { ok: false, response: jsonError("invalid JSON", 400) };
+  }
+}
+
 /** Stream provider text chunks as a plain chunked-text response. */
 function streamText(chunks: AsyncIterable<string>): Response {
   const encoder = new TextEncoder();
@@ -166,33 +233,17 @@ async function handleExplain(request: Request, env: Env): Promise<Response> {
   const gated = await spendGate(request, env);
   if (gated) return gated;
 
-  // Reject oversized payloads before buffering them.
-  const declared = Number(request.headers.get("content-length") ?? "0");
-  if (declared > CAPS.bodyBytes) {
-    return jsonError("request body too large", 413);
-  }
-  const raw = await request.text();
-  if (raw.length > CAPS.bodyBytes) {
-    return jsonError("request body too large", 413);
-  }
-  let body: unknown;
-  try {
-    body = JSON.parse(raw);
-  } catch {
-    return jsonError("invalid JSON", 400);
-  }
+  const read = await readCappedJson(request, CAPS.bodyBytes, "request body too large");
+  if (!read.ok) return read.response;
 
-  const parsed = parseExplainRequest(body);
+  const parsed = parseExplainRequest(read.body);
   if (!parsed.ok) return jsonError(parsed.error, 400);
 
   const built = buildPrompt(parsed.request);
   if (!built.ok) return jsonError(built.error, 400);
 
   if (await budgetExhausted(env)) {
-    return jsonError(
-      "the site's daily explanation budget is used up — try again tomorrow",
-      429,
-    );
+    return jsonError(BUDGET_EXHAUSTED_MESSAGE, 429);
   }
 
   const provider = providerFromEnv(env);
@@ -213,29 +264,18 @@ async function handleScan(request: Request, env: Env): Promise<Response> {
   // of silently calling the paid vision API (review finding).
   const fake = env.EXPLAIN_PROVIDER === "fake" || !env.ANTHROPIC_API_KEY;
 
-  const declared = Number(request.headers.get("content-length") ?? "0");
-  if (declared > SCAN_CAPS.bodyBytes) {
-    return jsonError("image too large — resize to under ~1MB", 413);
-  }
-  const raw = await request.text();
-  if (raw.length > SCAN_CAPS.bodyBytes) {
-    return jsonError("image too large — resize to under ~1MB", 413);
-  }
-  let body: unknown;
-  try {
-    body = JSON.parse(raw);
-  } catch {
-    return jsonError("invalid JSON", 400);
-  }
+  const read = await readCappedJson(
+    request,
+    SCAN_CAPS.bodyBytes,
+    "image too large — resize to under ~1MB",
+  );
+  if (!read.ok) return read.response;
 
-  const parsed = parseScanRequest(body);
+  const parsed = parseScanRequest(read.body);
   if (!parsed.ok) return jsonError(parsed.error, 400);
 
   if (await budgetExhausted(env)) {
-    return jsonError(
-      "the site's daily explanation budget is used up — try again tomorrow",
-      429,
-    );
+    return jsonError(BUDGET_EXHAUSTED_MESSAGE, 429);
   }
 
   let rawBoard: string;
@@ -262,32 +302,45 @@ async function handleScan(request: Request, env: Env): Promise<Response> {
   );
 }
 
-export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url);
+function route(request: Request, env: Env): Promise<Response> | Response {
+  const url = new URL(request.url);
 
-    if (url.pathname === "/api/health") {
-      return Response.json({
+  if (url.pathname === "/api/health") {
+    return Response.json(
+      {
         ok: true,
         service: "chess-web",
         prompt: PROMPT_VERSION,
         provider: providerFromEnv(env).name,
         time: new Date().toISOString(),
-      });
-    }
+      },
+      { headers: { "x-content-type-options": "nosniff" } },
+    );
+  }
 
-    if (url.pathname === "/api/explain") {
-      return handleExplain(request, env);
-    }
+  if (url.pathname === "/api/explain") {
+    return handleExplain(request, env);
+  }
 
-    if (url.pathname === "/api/scan") {
-      return handleScan(request, env);
-    }
+  if (url.pathname === "/api/scan") {
+    return handleScan(request, env);
+  }
 
-    if (url.pathname === "/api/verify") {
-      return handleVerify(request, env);
-    }
+  if (url.pathname === "/api/verify") {
+    return handleVerify(request, env);
+  }
 
-    return jsonError("not found", 404);
+  return jsonError("not found", 404);
+}
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    try {
+      return await route(request, env);
+    } catch {
+      // Error boundary of last resort: nothing internal (stack, framework
+      // detail) may ever reach the client, whatever threw.
+      return jsonError("internal error", 500);
+    }
   },
 } satisfies ExportedHandler<Env>;

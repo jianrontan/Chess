@@ -40,6 +40,7 @@
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["BudgetCounter"] }],
   "vars": {
     // ~$1.50/day worst case at Haiku prices with the 512-token output cap.
+    // Fallback lives in worker/index.ts DEFAULT_DAILY_BUDGET — keep in sync.
     "DAILY_BUDGET": "300"
   }
 }

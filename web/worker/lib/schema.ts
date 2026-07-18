@@ -8,6 +8,12 @@
  * these checks, re-serialized by our own code.
  */
 
+// The move-class vocabulary is OWNED by the client's grading module
+// (type-only import — erased at runtime, so the Worker bundle stays
+// worker-only). MOVE_CLASSES below exists for runtime validation; the
+// compile-time checks next to it keep the two from drifting.
+import type { MoveClass } from "../../src/lib/engine/grading";
+
 /** Payload caps — abuse guardrails, not UX limits. */
 export const CAPS = {
   bodyBytes: 16_384,
@@ -30,8 +36,13 @@ export const MOVE_CLASSES = [
   "inaccuracy",
   "mistake",
   "blunder",
-] as const;
-export type WireMoveClass = (typeof MOVE_CLASSES)[number];
+] as const satisfies readonly MoveClass[];
+export type WireMoveClass = MoveClass;
+/** Compile error here means grading.ts added a class missing from MOVE_CLASSES. */
+type AssertNever<T extends never> = T;
+export type _AllMoveClassesListed = AssertNever<
+  Exclude<MoveClass, (typeof MOVE_CLASSES)[number]>
+>;
 
 export interface CandidatesRequest {
   mode: "candidates";
