@@ -57,9 +57,9 @@ The demo becomes real: a position on screen, analyzed locally.
 - [x] *Abuse protection: payload caps, `max_tokens` cap, per-IP rate limit
       (10/min), global daily budget (Durable Object, `DAILY_BUDGET`/day),
       invisible Turnstile on every LLM endpoint (credentialless-iframe host
-      page — Turnstile can't run under the engine's COEP; Chromium-only v1,
-      pre-clearance detour page is the designed fix).
-      Remaining (user): provider-side monthly spend limit in the console.
+      page — Turnstile can't run under the engine's COEP). Non-Chromium
+      browsers: one-time top-level pre-clearance -> HMAC-signed 1h cookie
+      (/api/verify). Provider-side monthly spend limit: user-managed.
 - [x] *Worker validates client input: replay candidate/PV moves for legality
       (chess.js), clamp evals, payload caps (k≤5, PV≤12, 16KB body), treat
       evals as "client-reported"; prompt built only from our re-serialization
@@ -77,7 +77,8 @@ The demo becomes real: a position on screen, analyzed locally.
 - [x] Deploy: static export + Worker, wired to chess.jianrontan.com; live
       Haiku explanations (API key as Worker secret, real request verified)
 - Done when: the full user experience works end to end on the public site with
-  abuse protection on.
+  abuse protection on. ✅ 2026-07-18 — live Haiku explanations confirmed by a
+  human in prod, all gates active, non-Chromium fallback verified e2e.
 
 ## Phase 3 — Eval harness (pipeline)
 
