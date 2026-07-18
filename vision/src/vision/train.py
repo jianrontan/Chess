@@ -133,6 +133,10 @@ def export_onnx(model: nn.Module, out: Path) -> None:
         output_names=["logits"],
         dynamic_axes={"squares": {0: "batch"}, "logits": {0: "batch"}},
         opset_version=17,
+        # The dynamo exporter mis-handles dynamic_axes here (broken graph,
+        # shape-inference errors). The legacy exporter is fine for this
+        # tiny static CNN.
+        dynamo=False,
     )
 
 
@@ -185,7 +189,7 @@ def main() -> None:
         "--shards-per-epoch",
         type=int,
         default=0,
-        help="rotate a window of N shards per epoch (0 = all): short epochs, full coverage over time",
+        help="rotate a window of N shards per epoch (0 = all): short epochs, full coverage",
     )
     parser.add_argument(
         "--resume",
@@ -247,6 +251,10 @@ def main() -> None:
         state = torch.load(last_path, weights_only=False)
         model.load_state_dict(state["model"])
         optimizer.load_state_dict(state["optimizer"])
+        # The checkpoint carries the old lr — the flag must win on resume so
+        # later slices can anneal.
+        for group in optimizer.param_groups:
+            group["lr"] = args.lr
         start_epoch = state["epoch"] + 1
         best = state["best"]
         history = state["history"]
