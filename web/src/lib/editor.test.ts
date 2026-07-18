@@ -5,6 +5,7 @@ import {
   buildEditorFen,
   castlingFromFen,
   materialError,
+  rotate180,
   type CastlingChoice,
 } from "./editor";
 
@@ -123,6 +124,27 @@ describe("materialError", () => {
   it("rejects 10 queens (9 extras, only 8 possible promotions)", () => {
     const p = placement("4k3/QQQQQQQQ/QQ6/8/8/8/8/4K3 w - - 0 1");
     expect(materialError(p)).toMatch(/impossible/);
+  });
+});
+
+describe("rotate180", () => {
+  it("mirrors every piece a1 <-> h8, colors unchanged", () => {
+    // White pawn e3, white king e1, black king e8.
+    const p = placement("4k3/8/8/8/8/4P3/8/4K3 w - - 0 1");
+    const r = rotate180(p);
+    // e3 -> d6 (file e->d, rank 3->6); e1 -> d8; e8 -> d1.
+    expect(r.fen().split(" ")[0]).toBe("3K4/8/3p4/8/8/8/8/3k4".replace("p", "P"));
+  });
+
+  it("is its own inverse", () => {
+    const p = placement("r1bq1rk1/pp2npbp/2np2p1/2p1p3/2P1P3/2NP1NP1/PP3PBP/R1BQ1RK1 w - - 0 9");
+    const twice = rotate180(rotate180(p));
+    expect(twice.fen().split(" ")[0]).toBe(p.fen().split(" ")[0]);
+  });
+
+  it("start position rotates to mirrored ranks with kings on d-file", () => {
+    const r = rotate180(placement(START));
+    expect(r.fen().split(" ")[0]).toBe("RNBKQBNR/PPPPPPPP/8/8/8/8/pppppppp/rnbkqbnr");
   });
 });
 

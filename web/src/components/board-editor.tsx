@@ -16,6 +16,7 @@ import {
   buildEditorFen,
   castlingFromFen,
   materialError,
+  rotate180,
   type CastlingChoice,
 } from "@/lib/editor";
 
@@ -108,6 +109,13 @@ export function BoardEditor({
     setError("");
   }
 
+  /** Reinterpret orientation: pieces move to their mirrored squares. */
+  function rotateBoard() {
+    placementRef.current = rotate180(placementRef.current);
+    setPosition(placementRef.current.fen());
+    setError("");
+  }
+
   /** NCM's "Capture all": every piece off the board except the two kings. */
   function captureAll() {
     const placement = placementRef.current;
@@ -173,8 +181,17 @@ export function BoardEditor({
             variant="outline"
             size="sm"
             onClick={() => setOrientation((o) => (o === "white" ? "black" : "white"))}
+            title="Rotate your VIEW only — the position doesn't change"
           >
-            Flip
+            Flip view
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={rotateBoard}
+            title="Move every piece to its mirrored square — use when a position was read from the wrong side"
+          >
+            Rotate 180°
           </Button>
           <Button
             variant="outline"

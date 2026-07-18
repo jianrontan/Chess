@@ -318,8 +318,9 @@ export default function Home() {
                     className="max-h-56 w-full rounded-md border object-contain"
                   />
                   <p className="text-xs text-muted-foreground">
-                    Check the board against your photo — fix any squares, then
-                    set who moves before applying.
+                    Check the board against your photo — if it reads
+                    upside-down, hit &quot;Rotate 180°&quot;; fix any squares,
+                    then set who moves before applying.
                   </p>
                 </div>
               )}

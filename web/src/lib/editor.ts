@@ -116,6 +116,26 @@ export function materialError(placement: Chess): string | null {
   return null;
 }
 
+/**
+ * The same pieces with the board read the other way up: every piece moves to
+ * its 180°-mirrored square (a1 <-> h8), colors unchanged. This REINTERPRETS
+ * orientation — the fix for a scan read upside-down or a position built from
+ * the wrong side — unlike a view flip, which only rotates the camera.
+ */
+export function rotate180(placement: Chess): Chess {
+  const rotated = new Chess("8/8/8/8/8/8/8/8 w - - 0 1", { skipValidation: true });
+  for (const row of placement.board()) {
+    for (const sq of row) {
+      if (!sq) continue;
+      const file = sq.square.charCodeAt(0) - 97;
+      const rank = Number(sq.square[1]) - 1;
+      const mirrored = `${String.fromCharCode(97 + (7 - file))}${8 - rank}` as Square;
+      rotated.put({ color: sq.color, type: sq.type }, mirrored);
+    }
+  }
+  return rotated;
+}
+
 export interface EditorResult {
   fen?: string;
   error?: string;
