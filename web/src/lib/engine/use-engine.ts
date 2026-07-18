@@ -183,8 +183,13 @@ export function useEngineAnalysis(
       if (!client || !bestLine) return null; // no baseline — caller shows "not graded"
       const mover: "w" | "b" = preFen.split(" ")[1] === "b" ? "b" : "w";
 
+      // A movetime cutoff can leave line 1 a ply deeper than lines 2/3;
+      // comparing across depths is the exact skew the searchmoves path
+      // avoids, so only reuse a line searched to the baseline's depth.
       const known = preLines.find((l) => l.pv[0] === moveUci);
-      if (known) return gradePlayedMove(bestLine, known, mover);
+      if (known && known.depth === bestLine.depth) {
+        return gradePlayedMove(bestLine, known, mover);
+      }
 
       try {
         const result = await client.gradeMove(preFen, moveUci, {

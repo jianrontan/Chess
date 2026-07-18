@@ -15,6 +15,7 @@ import {
   candidatesRequestBody,
   gradeRequestBody,
   streamExplanation,
+  type ExplainRequest,
   type ExplainState,
 } from "@/lib/explain";
 import { materialError } from "@/lib/editor";
@@ -169,7 +170,7 @@ export default function Home() {
     clearExplanation();
   }
 
-  async function runExplain(body: unknown) {
+  async function runExplain(body: ExplainRequest) {
     const id = ++explainIdRef.current;
     setExplanation({ text: "", streaming: true, error: "" });
     try {
@@ -244,6 +245,12 @@ export default function Home() {
         return;
       }
       await runExplain(candidatesRequestBody(flipped, lines));
+    } catch {
+      // analyzeFen/runExplain handle their own errors; this backstop keeps a
+      // future throw from becoming an unhandled rejection.
+      if (explainIdRef.current === id) {
+        setExplanation({ text: "", streaming: false, error: "explanation failed" });
+      }
     } finally {
       setOtherSideBusy(false);
     }
@@ -446,10 +453,15 @@ export default function Home() {
             }
           />
           <AnalysisPanel
-            lines={analysis.lines}
+            // Lines are tagged with the fen they belong to. For ~debounce
+            // duration after a move they still describe the PREVIOUS
+            // position — rendering them under the new side to move would
+            // flip every eval sign, so show placeholders until fresh lines
+            // arrive (same guard the Explain button already uses).
+            lines={analysis.fen === fen ? analysis.lines : []}
             sideToMove={sideToMove}
-            analyzing={analysis.analyzing}
-            depth={analysis.depth}
+            analyzing={analysis.analyzing || analysis.fen !== fen}
+            depth={analysis.fen === fen ? analysis.depth : 0}
             gameOverText={overText}
             action={
               <div className="flex gap-1">

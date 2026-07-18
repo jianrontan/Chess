@@ -50,6 +50,8 @@ function onMessage(e: MessageEvent) {
  */
 function ensureFrame(): Promise<boolean> {
   readyPromise ??= new Promise<boolean>((resolve) => {
+    // Same function reference every time — re-adding after a failed
+    // bootstrap is a spec-level no-op, so retries can't stack listeners.
     window.addEventListener("message", onMessage);
 
     const el = document.createElement("iframe");

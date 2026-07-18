@@ -10,6 +10,17 @@
 import type { MoveVerdict } from "@/lib/engine/grading";
 import type { EngineLine } from "@/lib/engine/types";
 import { getTurnstileToken } from "@/lib/turnstile";
+// Type-only import of the Worker's wire schema: the compiler now enforces
+// the request contract at the producer, so a renamed/added field on either
+// side fails `tsc` instead of surfacing as a runtime 400.
+import type {
+  CandidatesRequest,
+  ExplainRequest,
+  GradeRequest,
+  WireLine,
+} from "../../worker/lib/schema";
+
+export type { ExplainRequest };
 
 export interface ExplainState {
   text: string;
@@ -17,15 +28,18 @@ export interface ExplainState {
   error: string;
 }
 
-function wireLine(l: EngineLine) {
+function wireLine(l: EngineLine): WireLine {
   return { multipv: l.multipv, depth: l.depth, cp: l.cp, mate: l.mate, pv: l.pv };
 }
 
-export function candidatesRequestBody(fen: string, lines: EngineLine[]): unknown {
+export function candidatesRequestBody(
+  fen: string,
+  lines: EngineLine[],
+): CandidatesRequest {
   return { mode: "candidates", fen, lines: lines.map(wireLine) };
 }
 
-export function gradeRequestBody(preFen: string, v: MoveVerdict): unknown {
+export function gradeRequestBody(preFen: string, v: MoveVerdict): GradeRequest {
   return {
     mode: "grade",
     fen: preFen,
@@ -71,7 +85,7 @@ export async function extractError(res: Response, fallback: string): Promise<str
  * Throws on a non-2xx response (the Worker returns JSON errors before it
  * starts streaming). Cancels the underlying stream if the consumer stops.
  */
-export async function* streamExplanation(body: unknown): AsyncGenerator<string> {
+export async function* streamExplanation(body: ExplainRequest): AsyncGenerator<string> {
   const res = await postWithTurnstile("/api/explain", JSON.stringify(body));
   if (!res.ok) throw new Error(await extractError(res, `explain failed (${res.status})`));
   if (!res.body) throw new Error("empty response body");
