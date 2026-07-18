@@ -47,6 +47,10 @@ export function useEngineAnalysis(
     moveUci: string,
     preLines: EngineLine[],
   ) => Promise<MoveVerdict | null>;
+  /** One-shot analysis of an arbitrary FEN (e.g. the flipped-side-to-move
+   * position for "what would the other side play?"). Queues behind any
+   * running search; does not touch the panel's analysis state. */
+  analyzeFen: (fen: string) => Promise<EngineLine[]>;
 } {
   const clientRef = useRef<EngineClient | null>(null);
   const generationRef = useRef(0);
@@ -196,5 +200,19 @@ export function useEngineAnalysis(
     [],
   );
 
-  return { engine, analysis, gradeMove };
+  const analyzeFen = useCallback(
+    async (target: string): Promise<EngineLine[]> => {
+      const client = clientRef.current;
+      if (!client) return [];
+      try {
+        const result = await client.analyze(target, { multipv, movetimeMs });
+        return result.lines;
+      } catch {
+        return []; // disposed/stopped mid-search — caller shows an error
+      }
+    },
+    [multipv, movetimeMs],
+  );
+
+  return { engine, analysis, gradeMove, analyzeFen };
 }

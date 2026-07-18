@@ -17,6 +17,7 @@ import {
   streamExplanation,
   type ExplainState,
 } from "@/lib/explain";
+import { flipSideToMove } from "@/lib/engine/fen";
 import { fileToDataUrl, scanImage } from "@/lib/scan";
 
 const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -63,10 +64,13 @@ export default function Home() {
   const [explanation, setExplanation] = useState<ExplainState | null>(null);
   const explainIdRef = useRef(0);
 
-  const { engine, analysis, gradeMove } = useEngineAnalysis(fen, {
+  const { engine, analysis, gradeMove, analyzeFen } = useEngineAnalysis(fen, {
     multipv: 3,
     movetimeMs: 5000,
   });
+  // "Explain for <other side>": engine must first analyze the flipped-side
+  // position, so this has its own busy state.
+  const [otherSideBusy, setOtherSideBusy] = useState(false);
 
   const sideToMove = useMemo(() => (fen.split(" ")[1] === "b" ? "b" : "w"), [fen]);
   // Derived from FEN alone (render must not read the ref). Note: threefold
@@ -197,6 +201,32 @@ export default function Home() {
     clearVerdict();
   }
 
+  // Explain what the OTHER side would play: analyze the same position with
+  // the side to move flipped (real engine lines — grounding stays intact),
+  // then request a normal candidates explanation for that position.
+  async function runExplainOtherSide() {
+    const flipped = flipSideToMove(fen);
+    if (!flipped) return;
+    const id = ++explainIdRef.current;
+    setOtherSideBusy(true);
+    setExplanation({ text: "", streaming: true, error: "" });
+    try {
+      const lines = await analyzeFen(flipped);
+      if (explainIdRef.current !== id) return; // superseded (new move/position)
+      if (lines.length === 0) {
+        setExplanation({
+          text: "",
+          streaming: false,
+          error: "couldn't analyze the position for the other side",
+        });
+        return;
+      }
+      await runExplain(candidatesRequestBody(flipped, lines));
+    } finally {
+      setOtherSideBusy(false);
+    }
+  }
+
   async function onScanFile(file: File) {
     setScanBusy(true);
     setScanError("");
@@ -290,6 +320,11 @@ export default function Home() {
                     {inCheck && <span className="font-semibold text-red-600">— check!</span>}
                   </>
                 )}
+                {orientation === "black" && (
+                  <span className="ml-auto text-xs font-normal text-muted-foreground">
+                    viewing as Black
+                  </span>
+                )}
               </div>
 
               {/* aspect-square guard: the board root fills its parent 100%,
@@ -380,20 +415,41 @@ export default function Home() {
             depth={analysis.depth}
             gameOverText={overText}
             action={
-              <Button
-                variant="outline"
-                size="sm"
-                // Lines must describe the CURRENT position (analysis.fen tag),
-                // and one explanation streams at a time (each request costs).
-                disabled={
-                  analysis.fen !== fen ||
-                  analysis.lines.length === 0 ||
-                  explanation?.streaming === true
-                }
-                onClick={() => runExplain(candidatesRequestBody(fen, analysis.lines))}
-              >
-                {explanation?.streaming ? "Explaining…" : "Explain position"}
-              </Button>
+              <div className="flex gap-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  // Lines must describe the CURRENT position (analysis.fen
+                  // tag), and one explanation streams at a time (cost).
+                  disabled={
+                    analysis.fen !== fen ||
+                    analysis.lines.length === 0 ||
+                    explanation?.streaming === true
+                  }
+                  onClick={() => runExplain(candidatesRequestBody(fen, analysis.lines))}
+                >
+                  {explanation?.streaming && !otherSideBusy
+                    ? "Explaining…"
+                    : `Explain for ${sideToMove === "w" ? "White" : "Black"}`}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  // Needs a legal flipped position (not in check, not over).
+                  disabled={
+                    !!overText ||
+                    inCheck ||
+                    explanation?.streaming === true ||
+                    engine.status !== "ready"
+                  }
+                  onClick={() => void runExplainOtherSide()}
+                  title="Analyzes the position as if it were the other side's turn"
+                >
+                  {otherSideBusy
+                    ? "Analyzing…"
+                    : `Explain for ${sideToMove === "w" ? "Black" : "White"}`}
+                </Button>
+              </div>
             }
           />
           <ExplanationCard state={explanation} />
