@@ -130,6 +130,7 @@ def build_split(
         written += len(labels)
         shard_idx += 1
         shard_images, shard_labels = [], []
+        print(f"{split}: shard {shard_idx} written ({written} squares)", flush=True)
 
     for i, fen in enumerate(fens):
         spec = _constrained_spec(fen, renderer, rng, split)

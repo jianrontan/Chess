@@ -22,7 +22,6 @@ from pathlib import Path
 import numpy as np
 import torch
 from torch import nn
-from torch.utils.data import DataLoader
 
 from vision.render import CLASSES
 
@@ -52,41 +51,33 @@ class SquareNet(nn.Module):
         return self.head(self.features(x).flatten(1))
 
 
-class ShardStream(torch.utils.data.IterableDataset):
-    """Stream shards one at a time — memory stays ~one shard regardless of
-    dataset size (holding everything as float32 would need tens of GB).
-    Shuffling: shard order reshuffled each epoch + full permutation within
-    each shard; conversion to float happens per batch, not up front."""
+def iter_batches(shards: list[Path], batch: int, shuffle: bool, seed: int = 0, epoch: int = 0):
+    """Stream (x, y) BATCHES shard by shard.
 
-    def __init__(self, shards: list[Path], shuffle: bool, seed: int = 0) -> None:
-        self.shards = shards
-        self.shuffle = shuffle
-        self.seed = seed
-        self.epoch = 0
+    Memory stays ~one shard, and conversion to float is one vectorized op per
+    batch — a per-item IterableDataset spent minutes of pure Python overhead
+    per step (looked hung at step 0). Shuffling: shard order by epoch + full
+    permutation within each shard (crc32-seeded — hash() is salted per run
+    and would make epochs irreproducible).
+    """
+    import zlib
 
-    def __iter__(self):
-        order = list(self.shards)
-        if self.shuffle:
-            rng = np.random.default_rng(self.seed + self.epoch)
-            rng.shuffle(order)
-            self.epoch += 1
-        for shard in order:
-            with np.load(shard) as d:
-                images, labels = d["images"], d["labels"]
-            idx = np.arange(len(labels))
-            if self.shuffle:
-                # zlib.crc32, not hash(): hash() is salted per interpreter
-                # run and would make epochs irreproducible.
-                import zlib
-
-                np.random.default_rng(self.seed + zlib.crc32(shard.name.encode()) % 10_000).shuffle(
-                    idx
-                )
-            for i in idx:
-                yield (
-                    torch.from_numpy(images[i]).permute(2, 0, 1).float() / 255.0,
-                    int(labels[i]),
-                )
+    order = list(shards)
+    if shuffle:
+        np.random.default_rng(seed + epoch).shuffle(order)
+    for shard in order:
+        with np.load(shard) as d:
+            images, labels = d["images"], d["labels"]
+        idx = np.arange(len(labels))
+        if shuffle:
+            np.random.default_rng(seed + epoch + zlib.crc32(shard.name.encode()) % 10_000).shuffle(
+                idx
+            )
+        for start in range(0, len(idx), batch):
+            chunk = idx[start : start + batch]
+            x = torch.from_numpy(images[chunk]).permute(0, 3, 1, 2).float() / 255.0
+            y = torch.from_numpy(labels[chunk].astype(np.int64))
+            yield x, y
 
 
 def split_shards(data_dir: Path, split: str) -> list[Path]:
@@ -113,11 +104,11 @@ def class_weights(counts: torch.Tensor) -> torch.Tensor:
 
 
 @torch.no_grad()
-def evaluate(model: nn.Module, loader: DataLoader) -> tuple[float, dict[str, float]]:
+def evaluate(model: nn.Module, batches) -> tuple[float, dict[str, float]]:
     model.eval()
     correct = torch.zeros(len(CLASSES))
     total = torch.zeros(len(CLASSES))
-    for x, y in loader:
+    for x, y in batches:
         pred = model(x).argmax(1)
         for c in range(len(CLASSES)):
             mask = y == c
@@ -162,13 +153,13 @@ def quantize(src: Path, dst: Path) -> None:
     quantize_dynamic(str(src), str(dst), weight_type=QuantType.QUInt8)
 
 
-def quantized_accuracy(onnx_path: Path, loader: DataLoader) -> float:
+def quantized_accuracy(onnx_path: Path, batches) -> float:
     import onnxruntime as ort
 
     sess = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
     correct = 0
     total = 0
-    for x, y in loader:
+    for x, y in batches:
         pred = sess.run(None, {"squares": x.numpy()})[0].argmax(1)
         correct += int((pred == y.numpy()).sum())
         total += len(y)
@@ -184,22 +175,39 @@ def main() -> None:
     parser.add_argument("--batch", type=int, default=512)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--limit-shards",
+        type=int,
+        default=0,
+        help="train on only the first N shards (0 = all) — faster runs on a busy machine",
+    )
+    parser.add_argument(
+        "--threads",
+        type=int,
+        default=2,
+        help="torch CPU threads; default 2 keeps the machine usable while training",
+    )
     args = parser.parse_args()
 
+    torch.set_num_threads(args.threads)
     torch.manual_seed(args.seed)
     run_dir = root / "runs" / args.run
     run_dir.mkdir(parents=True, exist_ok=True)
 
     train_shards = split_shards(args.data, "train")
+    if args.limit_shards > 0:
+        train_shards = train_shards[: args.limit_shards]
     heldout_shards = split_shards(args.data, "heldout")
     n_train, train_counts = split_label_counts(train_shards)
     n_heldout, _ = split_label_counts(heldout_shards)
     print(f"train: {n_train} squares | heldout: {n_heldout} squares")
 
-    train_loader = DataLoader(
-        ShardStream(train_shards, shuffle=True, seed=args.seed), batch_size=args.batch
-    )
-    heldout_loader = DataLoader(ShardStream(heldout_shards, shuffle=False), batch_size=1024)
+    def train_batches(epoch: int):
+        return iter_batches(train_shards, args.batch, shuffle=True, seed=args.seed, epoch=epoch)
+
+    def heldout_batches():
+        return iter_batches(heldout_shards, 1024, shuffle=False)
+
     steps_per_epoch = max(1, n_train // args.batch)
 
     model = SquareNet()
@@ -215,19 +223,19 @@ def main() -> None:
         t0 = time.time()
         running = 0.0
         steps = 0
-        for step, (x, y) in enumerate(train_loader):
+        for step, (x, y) in enumerate(train_batches(epoch)):
             optimizer.zero_grad()
             loss = criterion(model(x), y)
             loss.backward()
             optimizer.step()
             running += loss.item()
             steps += 1
-            if step % 200 == 0:
+            if step % 100 == 0:
                 print(
                     f"epoch {epoch} step {step}/{steps_per_epoch} loss {loss.item():.4f}",
                     flush=True,
                 )
-        overall, per_class = evaluate(model, heldout_loader)
+        overall, per_class = evaluate(model, heldout_batches())
         history.append({"epoch": epoch, "loss": running / max(1, steps), "heldout": overall})
         print(
             f"epoch {epoch}: loss {running / max(1, steps):.4f} "
@@ -240,27 +248,35 @@ def main() -> None:
 
     # Reload the best checkpoint for export.
     model.load_state_dict(torch.load(run_dir / "model.pt", weights_only=True))
-    overall, per_class = evaluate(model, heldout_loader)
+    overall, per_class = evaluate(model, heldout_batches())
 
-    onnx_path = run_dir / "model.onnx"
-    export_onnx(model, onnx_path)
-    sample = next(iter(heldout_loader))[0]  # one heldout batch (1024 crops)
-    parity = onnx_parity(onnx_path, model, sample)
-
-    int8_path = run_dir / "model.int8.onnx"
-    quantize(onnx_path, int8_path)
-    q_acc = quantized_accuracy(int8_path, heldout_loader)
-
-    metrics = {
+    # Persist training metrics BEFORE the export steps — an export crash
+    # must not lose the training results (it did once: missing onnxscript).
+    metrics: dict = {
         "params": n_params,
         "history": history,
         "heldout_overall": overall,
         "heldout_per_class": per_class,
-        "onnx_parity": parity,
-        "quantized_heldout_overall": q_acc,
-        "onnx_bytes": onnx_path.stat().st_size,
-        "int8_bytes": int8_path.stat().st_size,
     }
+    (run_dir / "metrics.json").write_text(json.dumps(metrics, indent=2))
+
+    onnx_path = run_dir / "model.onnx"
+    export_onnx(model, onnx_path)
+    sample = next(iter(heldout_batches()))[0]  # one heldout batch (1024 crops)
+    parity = onnx_parity(onnx_path, model, sample)
+
+    int8_path = run_dir / "model.int8.onnx"
+    quantize(onnx_path, int8_path)
+    q_acc = quantized_accuracy(int8_path, heldout_batches())
+
+    metrics.update(
+        {
+            "onnx_parity": parity,
+            "quantized_heldout_overall": q_acc,
+            "onnx_bytes": onnx_path.stat().st_size,
+            "int8_bytes": int8_path.stat().st_size,
+        }
+    )
     (run_dir / "metrics.json").write_text(json.dumps(metrics, indent=2))
     print(json.dumps({k: v for k, v in metrics.items() if k != "history"}, indent=2))
 

@@ -25,6 +25,7 @@ dev = [
 ml = [
     "onnx>=1.22.0",
     "onnxruntime>=1.27.0",
+    "onnxscript>=0.7.1",
     "torch>=2.13.0",
 ]
 # Rasterizing the SVG piece sets to PNG sprites (prepare_sprites). cairosvg
