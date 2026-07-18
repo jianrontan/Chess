@@ -17,22 +17,29 @@ BASE_SIZE = 128
 
 def rasterize_all(pieces_dir: Path, sprites_dir: Path, size: int = BASE_SIZE) -> int:
     import cairosvg  # deferred: only this step needs cairo
+    from PIL import Image
 
     count = 0
     for set_dir in sorted(p for p in pieces_dir.iterdir() if p.is_dir()):
         out = sprites_dir / set_dir.name
         out.mkdir(parents=True, exist_ok=True)
         for code in PIECE_CODES:
-            svg = set_dir / f"{code}.svg"
             png = out / f"{code}.png"
             if png.exists():
                 continue
-            cairosvg.svg2png(
-                url=str(svg),
-                write_to=str(png),
-                output_width=size,
-                output_height=size,
-            )
+            svg = set_dir / f"{code}.svg"
+            webp = set_dir / f"{code}.webp"
+            if svg.is_file():
+                cairosvg.svg2png(
+                    url=str(svg),
+                    write_to=str(png),
+                    output_width=size,
+                    output_height=size,
+                )
+            elif webp.is_file():
+                Image.open(webp).convert("RGBA").resize((size, size)).save(png)
+            else:
+                continue
             count += 1
     return count
 

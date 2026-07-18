@@ -62,7 +62,22 @@ LICENSED_SETS: dict[str, tuple[str, str]] = {
 }
 
 
-def import_sets(lila_piece_dir: Path, dest: Path) -> dict[str, dict[str, str]]:
+# Additional sets from Maurizio Monge's chess-art repo (all MIT) — the
+# "fancy" quirky styles that never shipped to lila. Deliberately-weird
+# glyphs: exactly the style-space coverage the holdout exam showed missing.
+CHESS_ART_SETS = ["eyes", "freak", "prmi", "skulls"]
+
+# monarchy ships webp instead of svg; imported as-is, rasterizer branches.
+WEBP_SETS: dict[str, tuple[str, str]] = {
+    "monarchy": ("slither77", "CC BY-NC-SA 4.0"),
+}
+
+
+def import_sets(
+    lila_piece_dir: Path,
+    dest: Path,
+    chess_art_dir: Path | None = None,
+) -> dict[str, dict[str, str]]:
     """Copy every licensed, complete set into dest/<set>/. Returns the manifest."""
     manifest: dict[str, dict[str, str]] = {}
     for name, (author, license_) in sorted(LICENSED_SETS.items()):
@@ -79,6 +94,35 @@ def import_sets(lila_piece_dir: Path, dest: Path) -> dict[str, dict[str, str]]:
         for code in PIECE_CODES:
             shutil.copyfile(src / f"{code}.svg", out / f"{code}.svg")
         manifest[name] = {"author": author, "license": license_}
+
+    for name, (author, license_) in WEBP_SETS.items():
+        src = lila_piece_dir / name
+        if not src.is_dir():
+            continue
+        missing = [c for c in PIECE_CODES if not (src / f"{c}.webp").is_file()]
+        if missing:
+            print(f"SKIP {name}: missing {missing}")
+            continue
+        out = dest / name
+        out.mkdir(parents=True, exist_ok=True)
+        for code in PIECE_CODES:
+            shutil.copyfile(src / f"{code}.webp", out / f"{code}.webp")
+        manifest[name] = {"author": author, "license": license_}
+
+    if chess_art_dir is not None:
+        for name in CHESS_ART_SETS:
+            src = chess_art_dir / "fancy" / name
+            # chess-art uses lowercase names: bb.svg -> our bB.svg.
+            missing = [c for c in PIECE_CODES if not (src / f"{c.lower()}.svg").is_file()]
+            if not src.is_dir() or missing:
+                print(f"SKIP chess-art {name}: {'not present' if not src.is_dir() else missing}")
+                continue
+            out = dest / name
+            out.mkdir(parents=True, exist_ok=True)
+            for code in PIECE_CODES:
+                shutil.copyfile(src / f"{code.lower()}.svg", out / f"{code}.svg")
+            manifest[name] = {"author": "Maurizio Monge", "license": "MIT"}
+
     (dest / "MANIFEST.json").write_text(json.dumps(manifest, indent=2))
     return manifest
 
@@ -86,15 +130,16 @@ def import_sets(lila_piece_dir: Path, dest: Path) -> dict[str, dict[str, str]]:
 def main() -> None:
     import argparse
 
-    parser = argparse.ArgumentParser(description="Import Lichess piece sets")
+    parser = argparse.ArgumentParser(description="Import piece sets (lila + chess-art)")
     parser.add_argument("lila_piece_dir", type=Path, help="path to lila/public/piece")
+    parser.add_argument("--chess-art", type=Path, default=None, help="path to a chess-art checkout")
     parser.add_argument(
         "--dest",
         type=Path,
         default=Path(__file__).resolve().parents[2] / "assets" / "pieces",
     )
     args = parser.parse_args()
-    manifest = import_sets(args.lila_piece_dir, args.dest)
+    manifest = import_sets(args.lila_piece_dir, args.dest, args.chess_art)
     print(f"imported {len(manifest)} sets -> {args.dest}")
 
 

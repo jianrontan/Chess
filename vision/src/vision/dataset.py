@@ -32,24 +32,56 @@ HOLDOUT_THEMES = ["walnut", "purple"]
 
 @dataclass
 class Augment:
-    """Screenshot-realistic damage applied to a rendered board."""
+    """Screenshot-realistic damage + color variation for a rendered board.
+
+    Color jitter is the generalization lever: unseen piece sets differ most
+    in PALETTE, and the model must learn that shape carries the class, not
+    color. Hue rotation leaves white/black piece identity intact (grays are
+    hue-invariant) while scrambling everything colored.
+    """
 
     jpeg_quality: int | None  # None = keep lossless
     rescale: float  # whole-image resize factor before slicing
     jitter_x: int  # grid misalignment in pixels
     jitter_y: int
+    hue_shift: int = 0  # 0-255 (PIL HSV wheel)
+    saturation: float = 1.0
+    brightness: float = 1.0
+    contrast: float = 1.0
+    grayscale: bool = False
 
     @staticmethod
-    def sample(rng: random.Random) -> Augment:
+    def sample(rng: random.Random, color_jitter: bool = True) -> Augment:
+        """color_jitter is for TRAINING data only — the heldout exam must
+        stay screenshot-realistic or its number stops meaning anything."""
         return Augment(
             jpeg_quality=rng.randint(40, 95) if rng.random() < 0.7 else None,
             rescale=rng.uniform(0.7, 1.3) if rng.random() < 0.5 else 1.0,
             jitter_x=rng.randint(-3, 3),
             jitter_y=rng.randint(-3, 3),
+            hue_shift=rng.randint(0, 255) if color_jitter and rng.random() < 0.5 else 0,
+            saturation=rng.uniform(0.5, 1.5) if color_jitter and rng.random() < 0.5 else 1.0,
+            brightness=rng.uniform(0.8, 1.2) if color_jitter and rng.random() < 0.5 else 1.0,
+            contrast=rng.uniform(0.85, 1.15) if color_jitter and rng.random() < 0.5 else 1.0,
+            grayscale=color_jitter and rng.random() < 0.05,
         )
 
 
 def apply_damage(img: Image.Image, aug: Augment) -> Image.Image:
+    from PIL import ImageEnhance
+
+    if aug.grayscale:
+        img = img.convert("L").convert("RGB")
+    elif aug.hue_shift:
+        hsv = np.asarray(img.convert("HSV")).copy()
+        hsv[..., 0] = (hsv[..., 0].astype(np.int16) + aug.hue_shift) % 256
+        img = Image.fromarray(hsv, "HSV").convert("RGB")
+    if aug.saturation != 1.0:
+        img = ImageEnhance.Color(img).enhance(aug.saturation)
+    if aug.brightness != 1.0:
+        img = ImageEnhance.Brightness(img).enhance(aug.brightness)
+    if aug.contrast != 1.0:
+        img = ImageEnhance.Contrast(img).enhance(aug.contrast)
     if aug.rescale != 1.0:
         w, h = img.size
         img = img.resize((max(8, round(w * aug.rescale)), max(8, round(h * aug.rescale))))
@@ -135,7 +167,7 @@ def build_split(
     for i, fen in enumerate(fens):
         spec = _constrained_spec(fen, renderer, rng, split)
         img, labels = renderer.render(spec)
-        aug = Augment.sample(rng)
+        aug = Augment.sample(rng, color_jitter=split == "train")
         crops = slice_crops(apply_damage(img, aug), aug)
         shard_images.append(crops)
         shard_labels.append(np.asarray(labels, dtype=np.uint8).reshape(64))

@@ -126,5 +126,25 @@
   "xkcd": {
     "author": "Randall Munroe",
     "license": "CC BY-NC 2.5"
+  },
+  "monarchy": {
+    "author": "slither77",
+    "license": "CC BY-NC-SA 4.0"
+  },
+  "eyes": {
+    "author": "Maurizio Monge",
+    "license": "MIT"
+  },
+  "freak": {
+    "author": "Maurizio Monge",
+    "license": "MIT"
+  },
+  "prmi": {
+    "author": "Maurizio Monge",
+    "license": "MIT"
+  },
+  "skulls": {
+    "author": "Maurizio Monge",
+    "license": "MIT"
   }
 }

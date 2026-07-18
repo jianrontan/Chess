@@ -29,23 +29,28 @@ CROP = 32
 
 
 class SquareNet(nn.Module):
-    def __init__(self, num_classes: int = 13) -> None:
+    """Per-square classifier. width=1.5 doubles capacity vs v3 (~210k
+    params) — the knight/bishop confusions on unseen styles pointed at
+    under-capacity for shape abstraction, not underfitting."""
+
+    def __init__(self, num_classes: int = 13, width: float = 1.5) -> None:
         super().__init__()
+        c1, c2, c3 = round(32 * width), round(64 * width), round(128 * width)
         self.features = nn.Sequential(
-            nn.Conv2d(3, 32, 3, padding=1),
-            nn.BatchNorm2d(32),
+            nn.Conv2d(3, c1, 3, padding=1),
+            nn.BatchNorm2d(c1),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(2),  # 16
-            nn.Conv2d(32, 64, 3, padding=1),
-            nn.BatchNorm2d(64),
+            nn.Conv2d(c1, c2, 3, padding=1),
+            nn.BatchNorm2d(c2),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(2),  # 8
-            nn.Conv2d(64, 128, 3, padding=1),
-            nn.BatchNorm2d(128),
+            nn.Conv2d(c2, c3, 3, padding=1),
+            nn.BatchNorm2d(c3),
             nn.ReLU(inplace=True),
             nn.AdaptiveAvgPool2d(1),
         )
-        self.head = nn.Linear(128, num_classes)
+        self.head = nn.Linear(c3, num_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.head(self.features(x).flatten(1))
@@ -231,7 +236,9 @@ def main() -> None:
         return iter_batches(shards, args.batch, shuffle=True, seed=args.seed, epoch=epoch)
 
     def heldout_batches(quick: bool = False):
-        shards = heldout_shards[:1] if quick else heldout_shards
+        # 2 shards for the quick eval: 1 shard proved noisy enough to
+        # mis-select the best checkpoint.
+        shards = heldout_shards[:2] if quick else heldout_shards
         return iter_batches(shards, 1024, shuffle=False)
 
     per_epoch = args.shards_per_epoch or len(train_shards)
@@ -261,7 +268,14 @@ def main() -> None:
         print(f"resumed after epoch {state['epoch']} (best {best:.5f})", flush=True)
     if start_epoch >= args.epochs:
         print("already trained to the requested epochs", flush=True)
+    import math
+
     for epoch in range(start_epoch, args.epochs):
+        # Cosine annealing by epoch index — works across resume slices
+        # because it's a pure function of (epoch, total).
+        lr = args.lr * 0.5 * (1 + math.cos(math.pi * epoch / max(1, args.epochs)))
+        for group in optimizer.param_groups:
+            group["lr"] = lr
         model.train()
         t0 = time.time()
         running = 0.0
