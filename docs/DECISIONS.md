@@ -192,3 +192,23 @@ bare game scores anyway).
 
 **Consequence:** corpus swap signed off 2026-07-17; CLAUDE.md, ARCHITECTURE.md,
 and README updated to the clean-licensed corpus.
+
+## 2026-07-18 — Board editor v2: explicit castling + promotion-aware material rules
+
+**Decision:** the editor works NCM-style (nextchessmove.com): free drag with
+spare palettes, drag-off to remove, Reset/Clear/Capture-all/Flip/PGN-import,
+explicit White/Black-to-move buttons, and FOUR castling checkboxes that are
+user-controlled but intersected with placement availability (box disables when
+the king/rook leaves its home square). This replaces the derived-only castling
+of v1 — deriving was safe but wrong for positions where a king/rook returned
+to its home square without rights.
+
+**Material validation** uses promotion accounting rather than naive caps:
+per side, pawns ≤ 8 and (pieces beyond the starting set) ≤ (8 − pawns), so
+8P+2Q and 9P are rejected while 7P+2Q or 6P+3R are legal. Pure function
+(`materialError`, web/src/lib/editor.ts), vitest-covered, enforced at apply
+time alongside chess.js FEN validation and the impossible-check test.
+
+**PGN import** loads the FINAL position only (no move scrubbing — that's a
+separate feature if ever needed). En passant stays "-": editor positions have
+no move history.

@@ -101,9 +101,10 @@ the project's signature move: we control the renderer, so labeled data is free.
       confirm screen stays as the safety net
 - [ ] Side-by-side eval vs the LLM scan on the same screenshot set; retire
       /api/scan when CV wins
-- [ ] Board editor v2 (NCM-style): free drag with explicit castling/side
-      controls, PGN import, promotion-aware material validation (planned
-      separately — see DECISIONS.md when it lands)
+- [x] Board editor v2 (NCM-style): explicit castling checkboxes (gated by
+      placement availability), capture-all, flip, PGN import (final
+      position), promotion-aware material validation (8P+2Q rejected,
+      7P+2Q allowed). See DECISIONS.md 2026-07-18.
 - Done when: a Lichess/chess.com screenshot scans correctly client-side and
   the gate report is committed.
 
