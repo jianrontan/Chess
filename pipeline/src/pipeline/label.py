@@ -32,6 +32,7 @@ from pipeline.judge_eval import _jobs_from_record, _side_name
 RUBRIC = """  2 = right idea AND sound reasoning, nothing invented
   1 = right idea, but shaky/wrong reasoning or an invented detail
   0 = wrong idea
+  b = walk the main line board by board (check the claims yourself)
   s = skip (unsure — excluded from the gate, not counted against it)
   q = save and quit"""
 
@@ -54,6 +55,40 @@ def _board_art(fen: str) -> str:
         rows.append(f" {rank + 1}  " + " ".join(cells))
     rows.append("\n    a b c d e f g h")
     return "\n".join(rows)
+
+
+def walk_line(fen: str, ucis: list[str]) -> str:
+    """Board after each move of the main line, ending with the real result.
+
+    You do not need to be strong enough to FIND the tactic to grade the
+    explanation of it — but you do need to check claims like "this is
+    checkmate" or "the rook is trapped". Rather than making the labeler
+    hold six plies in their head, show the position after each move and
+    state the terminal status from python-chess, which cannot be fooled.
+    """
+    board = chess.Board(fen)
+    out: list[str] = []
+    for uci in ucis:
+        move = chess.Move.from_uci(uci)
+        if move not in board.legal_moves:
+            out.append(f"  (line breaks at {uci} — illegal here)")
+            break
+        san = board.san(move)
+        number = board.fullmove_number
+        dots = "." if board.turn == chess.WHITE else "..."
+        board.push(move)
+        out.append(f"\nafter {number}{dots} {san}:")
+        out.append(_board_art(board.fen()))
+    if board.is_checkmate():
+        winner = "White" if board.turn == chess.BLACK else "Black"
+        out.append(f"\n>>> CHECKMATE — {winner} wins. <<<")
+    elif board.is_stalemate():
+        out.append("\n>>> STALEMATE — draw. <<<")
+    elif board.is_check():
+        out.append("\n>>> check (not mate) <<<")
+    else:
+        out.append("\n>>> no forced mate at the end of this line <<<")
+    return "\n".join(out)
 
 
 def _prompt(text: str) -> str:
@@ -92,10 +127,13 @@ def label_one(job: dict, index: int, total: int) -> dict | None:
             raise SystemExit(0)
         if answer == "s":
             return None
+        if answer == "b":
+            print(walk_line(job["fen"], job.get("line_ucis") or []))
+            continue
         if answer in ("0", "1", "2"):
             score = int(answer)
             break
-        print("  enter 0, 1, 2, s, or q")
+        print("  enter 0, 1, 2, b, s, or q")
 
     category = "ok"
     if score < 2:

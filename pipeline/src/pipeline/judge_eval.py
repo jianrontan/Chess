@@ -44,6 +44,9 @@ def _jobs_from_record(rec: dict) -> list[dict]:
             "solution_san": rec["solution_san"],
             "engine_lines": rec["candidates"]["lines_text"],
             "explanation": rec["candidates"]["explanation"],
+            # The main line in UCI, so the labeling tool can walk the human
+            # through it board by board. Unused by the judge.
+            "line_ucis": list(rec["solution"]),
         }
     ]
     grade = rec.get("grade") or {}
@@ -58,6 +61,7 @@ def _jobs_from_record(rec: dict) -> list[dict]:
                 "solution_san": rec["solution_san"],
                 "engine_lines": grade["lines_text"],
                 "explanation": grade["explanation"],
+                "line_ucis": list(grade["played_line"]["pv"]),
             }
         )
     return jobs
