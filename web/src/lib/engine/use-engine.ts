@@ -192,8 +192,12 @@ export function useEngineAnalysis(
       }
 
       try {
+        // Depth-matched to the baseline, but clamped and wall-clock-capped:
+        // trivial endgames reach depth 60+, and past ~30 the extra plies
+        // don't change the class while the restricted search can stall.
         const result = await client.gradeMove(preFen, moveUci, {
-          depth: bestLine.depth,
+          depth: Math.min(bestLine.depth, 30),
+          movetimeMs,
         });
         const playedLine = result.lines[0];
         if (!playedLine) return null; // terminal position or illegal restriction
@@ -202,7 +206,7 @@ export function useEngineAnalysis(
         return null; // disposed mid-search
       }
     },
-    [],
+    [movetimeMs],
   );
 
   const analyzeFen = useCallback(

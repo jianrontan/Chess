@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Chess } from "chess.js";
+import { Chess, type Square } from "chess.js";
 import { Chessboard, type Arrow, type PieceDropHandlerArgs } from "react-chessboard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -31,6 +31,13 @@ const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 /** Board position stashed across the /turnstile detour (full page nav). */
 const PENDING_FEN_KEY = "chess:pending-fen";
+
+type PromotionPiece = "q" | "r" | "b" | "n";
+
+const PROMO_GLYPHS: Record<"w" | "b", Record<PromotionPiece, string>> = {
+  w: { q: "♕", r: "♖", b: "♗", n: "♘" },
+  b: { q: "♛", r: "♜", b: "♝", n: "♞" },
+};
 
 /** Verdict-arrow colors keyed by move class (played move); best move is green. */
 const ARROW_CLASS_COLOR: Record<MoveVerdict["moveClass"], string> = {
@@ -90,6 +97,13 @@ export default function Home() {
   // scans, and editor applies start a fresh game with none.
   const [moveCount, setMoveCount] = useState(0);
   const [showArrows, setShowArrows] = useState(true);
+  // A pawn reached the last rank: the move is parked until the user picks
+  // the piece. Auto-queening silently substituted the move being graded —
+  // and made underpromotion (a real puzzle theme) unplayable.
+  const [pendingPromotion, setPendingPromotion] = useState<{
+    from: string;
+    to: string;
+  } | null>(null);
   // Position the last verdict was graded from — the grade explanation
   // must be requested against THAT fen, not the current one.
   const [gradedFen, setGradedFen] = useState<string | null>(null);
@@ -199,9 +213,8 @@ export default function Home() {
     setExplanation(null);
   }, []);
 
-  const onPieceDrop = useCallback(
-    ({ sourceSquare, targetSquare }: PieceDropHandlerArgs): boolean => {
-      if (!targetSquare) return false;
+  const playMove = useCallback(
+    (from: string, to: string, promotion?: PromotionPiece): boolean => {
       // Snapshot BEFORE the move: grading compares against this position.
       // analysis.lines may still describe the PREVIOUS position (debounce
       // window) — only use them if they are tagged with this exact FEN.
@@ -209,12 +222,7 @@ export default function Home() {
       const latest = analysisRef.current;
       const preLines = latest.fen === preFen ? latest.lines : [];
       try {
-        // TODO(ui): promotion picker; auto-queen for now.
-        const move = gameRef.current.move({
-          from: sourceSquare,
-          to: targetSquare,
-          promotion: "q",
-        });
+        const move = gameRef.current.move({ from, to, promotion });
         setFen(gameRef.current.fen());
         setFenError("");
 
@@ -241,6 +249,23 @@ export default function Home() {
     [gradeMove, clearExplanation],
   );
 
+  const onPieceDrop = useCallback(
+    ({ sourceSquare, targetSquare }: PieceDropHandlerArgs): boolean => {
+      if (!targetSquare) return false;
+      // A promotion parks the move behind the piece picker instead of
+      // auto-queening (which silently substituted the graded move).
+      const isPromotion = gameRef.current
+        .moves({ square: sourceSquare as Square, verbose: true })
+        .some((m) => m.to === targetSquare && m.promotion !== undefined);
+      if (isPromotion) {
+        setPendingPromotion({ from: sourceSquare, to: targetSquare });
+        return false; // pawn snaps back; the move lands when a piece is picked
+      }
+      return playMove(sourceSquare, targetSquare);
+    },
+    [playMove],
+  );
+
   // Stable unless the position/orientation actually changes — engine updates
   // must not re-render the board.
   const boardOptions = useMemo(
@@ -260,6 +285,7 @@ export default function Home() {
     setGradedFen(null);
     setGradeSkipped(false);
     setGradePending(false);
+    setPendingPromotion(null); // a parked promotion belongs to the old position
     clearExplanation();
   }
 
@@ -552,8 +578,39 @@ export default function Home() {
                   stretches to the board's height beside it. */}
               <div className="flex w-full gap-2">
                 <EvalBar winPct={evalWinPct} scoreText={evalScoreText} heightClass="self-stretch" />
-                <div className="aspect-square min-w-0 flex-1">
+                <div className="relative aspect-square min-w-0 flex-1">
                   <MemoChessboard options={boardOptions} />
+                  {pendingPromotion && (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center rounded-sm bg-black/40">
+                      <div className="flex flex-col items-center gap-2 rounded-md border bg-background p-3 shadow-lg">
+                        <span className="text-sm font-medium">Promote to</span>
+                        <div className="flex gap-2">
+                          {(["q", "r", "b", "n"] as const).map((p) => (
+                            <Button
+                              key={p}
+                              variant="outline"
+                              className="h-12 w-12 text-3xl"
+                              aria-label={{ q: "Queen", r: "Rook", b: "Bishop", n: "Knight" }[p]}
+                              onClick={() => {
+                                const pp = pendingPromotion;
+                                setPendingPromotion(null);
+                                playMove(pp.from, pp.to, p);
+                              }}
+                            >
+                              {PROMO_GLYPHS[sideToMove][p]}
+                            </Button>
+                          ))}
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setPendingPromotion(null)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 

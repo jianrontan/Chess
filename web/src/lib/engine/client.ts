@@ -160,16 +160,18 @@ export class EngineClient {
 
     try {
       // Fixed-depth mode (Mode 2 grading) vs fixed-movetime mode (analysis).
+      // Depth mode ALWAYS carries a movetime cap too (UCI stops at whichever
+      // limit hits first): a searchmoves-restricted depth search can
+      // effectively never finish (seen live: grading an underpromotion into
+      // a drawn K+N vs K subtree at a huge matched depth hung past the 60s
+      // timeout and killed the engine for the whole session).
       const goParts = opts.depth
-        ? ["go", "depth", String(opts.depth)]
+        ? ["go", "depth", String(opts.depth), "movetime", String(movetime)]
         : ["go", "movetime", String(movetime)];
       if (opts.searchMoves?.length) goParts.push("searchmoves", ...opts.searchMoves);
       this.send(goParts.join(" "));
 
-      // Depth searches have no wall-clock bound; allow a generous window.
-      const timeoutMs = opts.depth
-        ? 60_000
-        : movetime + BESTMOVE_TIMEOUT_MARGIN_MS;
+      const timeoutMs = movetime + BESTMOVE_TIMEOUT_MARGIN_MS;
       const bestLine = await this.waitFor((l) => l.startsWith("bestmove"), timeoutMs);
 
       // "bestmove (none)" = terminal position (mate/stalemate) or searchmoves
