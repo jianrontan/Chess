@@ -90,15 +90,29 @@ def _spread_pairs(reps: int = 1) -> list[tuple[int, int]]:
     return pairs * reps
 
 
-def test_verdict_requires_ci_lower_bound_not_point_estimate():
-    marginal = _spread_pairs()
-    assert _agreement(marginal)[0] == pytest.approx(0.85)
-    assert _kappa(marginal) > KAPPA_BAR  # kappa is fine; only n is lacking
-    # 85% on 100 items looks like a pass and cannot support one.
-    assert _verdict(marginal).startswith("inconclusive")
+def test_verdict_passes_a_good_judge_at_a_realistic_label_count():
+    # 85% agreement over 100 well-spread labels: the interval clears the
+    # usable floor, so this passes. Requiring the interval to clear the
+    # 80% BAR instead would need ~275 labels for the same judge, and
+    # ~1550 if it were 82% — see USABLE_FLOOR.
+    good = _spread_pairs()
+    assert _agreement(good)[0] == pytest.approx(0.85)
+    assert _kappa(good) > KAPPA_BAR
+    assert _verdict(good) == "**PASS**"
 
-    # Identical rate, enough items for the interval to clear the bar.
-    assert _verdict(_spread_pairs(5)) == "**PASS**"
+
+def test_verdict_is_inconclusive_when_too_few_labels():
+    # Same 85% rate on a tenth of the data: interval now reaches below
+    # the usable floor, so it must not claim a pass.
+    thin = [(2, 2)] * 4 + [(1, 1)] * 3 + [(0, 0)] * 1 + [(2, 1)] * 1 + [(1, 0)] * 1
+    assert _verdict(thin).startswith("inconclusive")
+
+
+def test_verdict_fails_below_the_bar_regardless_of_precision():
+    # 60% agreement measured very precisely is still a failing judge.
+    poor = ([(2, 2)] * 6 + [(1, 0)] * 2 + [(0, 1)] * 1 + [(1, 2)] * 1) * 40
+    assert _agreement(poor)[0] == pytest.approx(0.60)
+    assert _verdict(poor).startswith("fail")  # may fail on kappa or on the bar
 
 
 def test_verdict_fails_a_distribution_parroting_judge():
@@ -122,7 +136,8 @@ def test_report_recommends_cheapest_passing_config():
 
 
 def test_report_distinguishes_inconclusive_from_failed():
-    text = report([_result("sonnet-low", "claude-sonnet-5", _spread_pairs())], 100, 0.0)
+    thin = [(2, 2)] * 4 + [(1, 1)] * 3 + [(0, 0)] * 1 + [(2, 1)] * 1 + [(1, 0)] * 1
+    text = report([_result("sonnet-low", "claude-sonnet-5", thin)], 10, 0.0)
     assert "Inconclusive, not failed" in text
     assert "do NOT revise the rubric" in text
     assert "Recommendation:" not in text

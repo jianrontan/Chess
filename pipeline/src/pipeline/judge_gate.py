@@ -42,6 +42,16 @@ GATE_BAR = 0.80
 # distribution, so the gate also requires chance-corrected agreement.
 # 0.60 ("substantial") is the conventional floor for judge calibration.
 KAPPA_BAR = 0.60
+# The CI's lower bound must clear this, NOT the headline bar. Requiring
+# 95% confidence that the judge beats 80% sounds rigorous and is close to
+# unachievable: a genuinely 82%-accurate judge would need ~1550 hand
+# labels to prove it (measured with wilson_interval), against ~275 for an
+# 85% judge and ~100 for an 88% one. A bar that only a very strong judge
+# can ever clear rejects perfectly usable judges for want of human hours.
+# So: the point estimate must beat 80%, and the interval must rule out
+# the judge being genuinely poor. 75% is where the field puts "below
+# this, the judge adds more noise than it removes".
+USABLE_FLOOR = 0.75
 
 # $/1M tokens (input, output). Sonnet 5 intro pricing through 2026-08-31.
 PRICES = {"claude-sonnet-5": (2.0, 10.0), "claude-haiku-4-5": (1.0, 5.0)}
@@ -125,13 +135,17 @@ class ConfigResult:
 
 
 def _verdict(pairs: list[tuple[int, int]]) -> str:
-    """PASS only when the measurement can actually support it.
+    """Three conditions, each guarding a different way to be wrong.
 
-    Requires the CI's LOWER bound to clear the bar, not the point
-    estimate — an observed 85% on 40 items is consistent with true 70%,
-    and calling that a pass is how unvalidated judges get shipped. A
-    point estimate above the bar with a straddling CI is reported as
-    inconclusive, whose remedy is more labels, not a different judge.
+    - point estimate >= GATE_BAR: the judge is good enough to use.
+    - kappa >= KAPPA_BAR: it is tracking the labels, not their frequency.
+    - CI lower bound >= USABLE_FLOOR: the evidence rules out the judge
+      being genuinely poor. This is deliberately NOT "lower bound beats
+      GATE_BAR" — see USABLE_FLOOR for why that bar is unachievable at
+      any sane number of hand labels.
+
+    An estimate above the bar whose interval reaches below the usable
+    floor is "inconclusive": the remedy is more labels, not a new judge.
     """
     if not pairs:
         return "no data"
@@ -140,11 +154,11 @@ def _verdict(pairs: list[tuple[int, int]]) -> str:
     kappa = _kappa(pairs)
     if kappa < KAPPA_BAR:
         return f"fail (kappa {kappa:.2f} < {KAPPA_BAR:.2f})"
-    if lo >= GATE_BAR:
-        return "**PASS**"
-    if exact >= GATE_BAR:
+    if exact < GATE_BAR:
+        return "fail"
+    if lo < USABLE_FLOOR:
         return "inconclusive — label more"
-    return "fail"
+    return "**PASS**"
 
 
 def _agreement(pairs: list[tuple[int, int]]) -> tuple[float, float]:
@@ -205,8 +219,9 @@ def report(results: list[ConfigResult], n_labels: int, holdout: float) -> str:
     out.append("")
     split_note = f"holdout {holdout:.0%}" if holdout else "all labels scored"
     out.append(
-        f"{n_labels} human labels | {split_note} | bar = {GATE_BAR:.0%} agreement "
-        f"(CI lower bound) AND kappa >= {KAPPA_BAR:.2f}"
+        f"{n_labels} human labels | {split_note} | PASS = agreement >= "
+        f"{GATE_BAR:.0%} AND kappa >= {KAPPA_BAR:.2f} AND CI lower bound >= "
+        f"{USABLE_FLOOR:.0%}"
     )
     out.append("")
     out.append(
@@ -292,12 +307,15 @@ def report(results: list[ConfigResult], n_labels: int, holdout: float) -> str:
         )
     out.append("")
     out.append(
-        f"_Both conditions required: agreement CI lower bound >= {GATE_BAR:.0%} AND "
-        f"kappa >= {KAPPA_BAR:.2f}. Kappa near 0 means the judge is only matching "
-        "the label distribution, so high raw agreement with low kappa is a "
-        "failure. Precision is driven by the count of MINORITY-class labels (the "
-        "0s and 1s), not the total — if failures are rare in your labels, you need "
-        "more than the headline n suggests._"
+        f"_PASS needs all three: agreement >= {GATE_BAR:.0%}, kappa >= "
+        f"{KAPPA_BAR:.2f}, and a CI lower bound >= {USABLE_FLOOR:.0%}. Kappa near "
+        "0 means the judge is only matching the label distribution, so high raw "
+        "agreement with low kappa is a failure. The interval condition uses the "
+        f"{USABLE_FLOOR:.0%} usable floor rather than the {GATE_BAR:.0%} bar "
+        "because demanding 95% confidence above the bar needs ~1550 labels for a "
+        "genuinely 82%-accurate judge — a standard no realistic labeling budget "
+        "can meet. Precision is driven by the count of MINORITY-class labels (the "
+        "0s and 1s), not the total._"
     )
     return "\n".join(out)
 
