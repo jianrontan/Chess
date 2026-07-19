@@ -251,7 +251,13 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="head-slice for smoke tests only; biased (the sample is id-sorted)",
     )
-    parser.add_argument("--threads", type=int, default=2, help="engine threads")
+    parser.add_argument(
+        "--threads",
+        type=int,
+        default=1,
+        help="engine threads; 1 keeps the ground truth reproducible "
+        "(multi-threaded search is non-deterministic)",
+    )
     parser.add_argument(
         "--concurrency",
         type=int,

@@ -72,7 +72,14 @@ class Engine:
     serializing engine access costs nothing at that ratio.
     """
 
-    def __init__(self, path: Path | None = None, threads: int = 2, hash_mb: int = 256):
+    def __init__(self, path: Path | None = None, threads: int = 1, hash_mb: int = 256):
+        # threads=1 by DEFAULT because ground truth must be reproducible.
+        # Multi-threaded Stockfish search is non-deterministic: the same
+        # position at the same depth returned e3f2 on one sweep and d8e8
+        # on the next (puzzle 1u4gJ, 1 of 400). A project whose claim is
+        # verifiability cannot have an answer key that quietly varies
+        # between runs. Single-threaded costs ~2x wall clock on a job that
+        # takes minutes, which is the right trade.
         self.path = path or find_stockfish()
         self._engine = chess.engine.SimpleEngine.popen_uci(str(self.path))
         self._engine.configure({"Threads": threads, "Hash": hash_mb})

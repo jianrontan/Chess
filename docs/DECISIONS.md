@@ -304,3 +304,38 @@ needed for engine work — the sweep is LLM-latency-bound and now runs a
 worker pool. And the grade-arm filter is NOT inert as the tiny smoke runs
 suggested: it fires on 135/150 (90%), so 15 setup moves genuinely were not
 mistakes.
+
+## 2026-07-19 (later) — Prompt v2 fixes the FEN misreading; 8.8% -> 0.5%
+
+**Paired sweep, 400 identical puzzles, v1 vs v2:**
+
+| check | v1 (raw FEN) | v2 (piece list) |
+|---|---|---|
+| false piece placements | 35/400 (8.8%) | **2/400 (0.5%)** |
+| ungrounded moves | 6/400 | 7/400 (unchanged) |
+
+A 17x reduction, and the two survivors are GENUINE model errors rather
+than checker artifacts — both hand-verified. In DjdoA the mating move
+`g5#` is a PAWN push and the explanation called the piece a queen; in
+YbKqF the explanation says "checks the king on f7" when f7 is where the
+QUEEN lands. Same family as before (misidentifying what sits on a
+square), now rare rather than routine.
+
+The ungrounded-move rate did not move, which is the expected result and
+a small validity check on the change: v1 already grounded MOVES well
+(98.5%), so a fix aimed at board DESCRIPTION should leave it alone. It
+did.
+
+**Reproducibility bug found in passing.** Puzzle 1u4gJ got a different
+engine best move (e3f2 vs d8e8) across the two sweeps at the SAME
+position and depth: multi-threaded Stockfish search is non-deterministic.
+For a project whose claim is verifiability, an answer key that varies
+between runs is unacceptable, so eval now defaults to Threads=1. Costs
+about 2x on a job measured in minutes. Note the residual caveat: the
+transposition table persists across positions within a process, so full
+bit-reproducibility would also need the hash cleared per position — not
+done, and the remaining variance is unmeasured.
+
+**Not deployed.** Prod still serves v1. The web tests, tsc and lint are
+clean and the piece list is pinned to byte-identical golden strings in
+both languages, but deploying is a separate decision.

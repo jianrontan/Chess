@@ -154,10 +154,12 @@ The differentiator. Build it before RAG so RAG has a scoreboard on arrival.
 - [ ] **AWAITING HUMAN**: hand-label ~100 items (`uv run python -m pipeline.label
       --run data/eval_runs/gate.jsonl`), then run `pipeline.judge_gate`. Nothing
       downstream can be reported as final until this passes.
-- [ ] Prompt v2: serialize an explicit piece list instead of a raw FEN — the
-      first sweep found ~6.7% of explanations state a false piece placement
-      (DECISIONS.md 2026-07-19). Sequenced AFTER the gate so the fix can be
-      measured against a trustworthy baseline.
+- [x] Prompt v2 (`prompts/explain.v2.json`): explicit piece list instead of a
+      raw FEN, plus a system rule that placements come from the list only.
+      Fixes the 8.1% false-piece-placement rate the first sweeps measured
+      (DECISIONS.md 2026-07-19). Serialized independently in TS and Python,
+      pinned to byte-identical golden strings in both suites. NOT YET
+      DEPLOYED — prod still serves v1 until the v2 sweep confirms the fix.
 - [x] Report (`pipeline.eval_report`): per-theme/per-band scorecard, judge score
       distribution + failure categories; notes theme-tag noise floor and marks
       judge numbers provisional until the gate passes
