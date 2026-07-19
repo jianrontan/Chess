@@ -14,23 +14,35 @@
  * in scan-logic.ts where vitest covers it.
  */
 
-// The wasm-only bundle: the default entry pulls the 25.6MiB jsep/webgpu
-// runtime, which both busts the 25MiB asset limit and is pointless for a
-// 64-crop CNN. This build requests the plain ~11MB wasm from /ort/.
-import * as ort from "onnxruntime-web/wasm";
+// ORT is loaded LAZILY and only in the browser: the wasm-only entry (the
+// default entry pulls a 25.6MiB jsep/webgpu runtime that busts the Workers
+// 25MiB asset limit) crashes Next's prerender when imported at module scope,
+// and eager loading would cost every visitor the download whether they scan
+// or not. Types come from the package root (same API surface).
+import type { InferenceSession, Tensor as OrtTensor } from "onnxruntime-web";
 import { enforceKings, gridToBoardFen, softmaxRows } from "@/lib/scan-logic";
 
 const MODEL_URL = "/models/squarenet-v5.int8.onnx";
 export const CROP = 32;
 
-let sessionPromise: Promise<ort.InferenceSession> | null = null;
+type OrtModule = typeof import("onnxruntime-web/wasm");
 
-function getSession(): Promise<ort.InferenceSession> {
+let ortPromise: Promise<OrtModule> | null = null;
+let sessionPromise: Promise<InferenceSession> | null = null;
+
+function getOrt(): Promise<OrtModule> {
+  ortPromise ??= import("onnxruntime-web/wasm");
+  return ortPromise;
+}
+
+function getSession(): Promise<InferenceSession> {
   if (!sessionPromise) {
-    ort.env.wasm.wasmPaths = "/ort/";
-    ort.env.wasm.numThreads = 1; // 64 tiny crops — threading buys nothing
-    sessionPromise = ort.InferenceSession.create(MODEL_URL, {
-      executionProviders: ["wasm"],
+    sessionPromise = getOrt().then((ort) => {
+      ort.env.wasm.wasmPaths = "/ort/";
+      ort.env.wasm.numThreads = 1; // 64 tiny crops — threading buys nothing
+      return ort.InferenceSession.create(MODEL_URL, {
+        executionProviders: ["wasm"],
+      });
     });
     sessionPromise.catch(() => {
       sessionPromise = null; // transient load failure must not stick forever
@@ -46,7 +58,7 @@ export interface BoardRegion {
 }
 
 /** Slice the selected square region into 64 CROP x CROP crops (NCHW floats). */
-function regionToTensor(image: HTMLImageElement | ImageBitmap, region: BoardRegion): ort.Tensor {
+function regionToFloats(image: HTMLImageElement | ImageBitmap, region: BoardRegion): Float32Array {
   const canvas = document.createElement("canvas");
   canvas.width = CROP * 8;
   canvas.height = CROP * 8;
@@ -68,7 +80,7 @@ function regionToTensor(image: HTMLImageElement | ImageBitmap, region: BoardRegi
       }
     }
   }
-  return new ort.Tensor("float32", out, [64, 3, CROP, CROP]);
+  return out;
 }
 
 export interface LocalScanResult {
@@ -83,8 +95,9 @@ export async function scanRegion(
   image: HTMLImageElement | ImageBitmap,
   region: BoardRegion,
 ): Promise<LocalScanResult> {
-  const session = await getSession();
-  const input = regionToTensor(image, region);
+  const [ort, session] = await Promise.all([getOrt(), getSession()]);
+  const floats = regionToFloats(image, region);
+  const input: OrtTensor = new ort.Tensor("float32", floats, [64, 3, CROP, CROP]);
   const output = await session.run({ squares: input });
   const logits = output.logits.data as Float32Array;
   const probs = softmaxRows(logits, 64, 13);
