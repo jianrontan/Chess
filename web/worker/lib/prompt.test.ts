@@ -1,10 +1,43 @@
 import { describe, expect, it } from "vitest";
-import { buildPrompt, evalPhrase, PROMPT_VERSION, pvToSan } from "./prompt";
+import { buildPrompt, evalPhrase, pieceList, PROMPT_VERSION, pvToSan } from "./prompt";
 import type { ExplainRequest } from "./schema";
+
+// Mate-in-2 position shared with the Python suite.
+const MATE_FEN = "2r4k/pb4pp/1p6/3pP3/3Pn3/2Pq2NQ/PP5P/5R1K w - - 0 24";
 
 const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 // After 1. e4: Black to move.
 const AFTER_E4 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
+
+describe("pieceList — cross-language golden strings", () => {
+  // These EXACT strings are asserted in pipeline/tests/test_prompts.py
+  // (GOLDEN_PIECE_LISTS). The Worker and the eval harness must serialize
+  // the prompt identically, or the harness stops measuring what prod
+  // sends. If you change the format, change both suites together.
+  it("matches the Python output for a midgame position", () => {
+    expect(pieceList(MATE_FEN)).toBe(
+      "White: Kh1, Qh3, Rf1, Ng3, pawns a2 b2 c3 d4 e5 h2\n" +
+        "Black: Kh8, Qd3, Rc8, Bb7, Ne4, pawns a7 b6 d5 g7 h7",
+    );
+  });
+
+  it("matches the Python output for the start position", () => {
+    expect(pieceList(START)).toBe(
+      "White: Ke1, Qd1, Ra1, Rh1, Bc1, Bf1, Nb1, Ng1, pawns a2 b2 c2 d2 e2 f2 g2 h2\n" +
+        "Black: Ke8, Qd8, Ra8, Rh8, Bc8, Bf8, Nb8, Ng8, pawns a7 b7 c7 d7 e7 f7 g7 h7",
+    );
+  });
+
+  it("matches the Python output for a bare-kings endgame", () => {
+    expect(pieceList("8/8/8/8/8/8/8/K6k w - - 0 1")).toBe("White: Ka1\nBlack: Kh1");
+  });
+
+  it("omits squares that hold nothing", () => {
+    // The v1 bug was the model asserting pieces on empty squares; the
+    // list must never mention one.
+    expect(pieceList(MATE_FEN)).not.toContain("c2");
+  });
+});
 
 describe("pvToSan", () => {
   it("converts a legal PV to numbered SAN", () => {

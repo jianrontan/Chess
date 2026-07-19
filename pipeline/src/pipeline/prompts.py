@@ -19,7 +19,19 @@ from pathlib import Path
 import chess
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-TEMPLATE_PATH = REPO_ROOT / "prompts" / "explain.v1.json"
+TEMPLATE_PATH = REPO_ROOT / "prompts" / "explain.v2.json"
+
+# Piece-list order. Must match pieceList() in web/worker/lib/prompt.ts —
+# the two are pinned to the same golden strings on both sides, because a
+# prompt that differs between prod and the harness means the eval is not
+# measuring the deployed system.
+_PIECE_ORDER: tuple[tuple[int, str], ...] = (
+    (chess.KING, "K"),
+    (chess.QUEEN, "Q"),
+    (chess.ROOK, "R"),
+    (chess.BISHOP, "B"),
+    (chess.KNIGHT, "N"),
+)
 
 _CLASS_PHRASES = {
     "best": "the best move",
@@ -45,6 +57,28 @@ def fill(template: str, variables: dict[str, str]) -> str:
         return variables[name]
 
     return re.sub(r"\{\{(\w+)\}\}", sub, template)
+
+
+def piece_list(fen: str) -> str:
+    """Exactly where every piece stands, one line per colour.
+
+    Exists because the model demonstrably misreads raw FEN: 8.1% of v1
+    explanations asserted a placement that was not on the board. Pieces
+    are listed in K/Q/R/B/N order then pawns, each group sorted by square,
+    so the string is deterministic and diffable.
+    """
+    board = chess.Board(fen)
+    lines: list[str] = []
+    for color, name in ((chess.WHITE, "White"), (chess.BLACK, "Black")):
+        parts: list[str] = []
+        for piece_type, letter in _PIECE_ORDER:
+            squares = sorted(chess.square_name(s) for s in board.pieces(piece_type, color))
+            parts.extend(f"{letter}{square}" for square in squares)
+        pawns = sorted(chess.square_name(s) for s in board.pieces(chess.PAWN, color))
+        if pawns:
+            parts.append("pawns " + " ".join(pawns))
+        lines.append(f"{name}: {', '.join(parts) if parts else '(none)'}")
+    return "\n".join(lines)
 
 
 def pv_to_san(fen: str, pv: list[str]) -> str:
@@ -129,6 +163,7 @@ def build_candidates_prompt(
         {
             "fen": fen,
             "side_to_move": side_name,
+            "pieces": piece_list(fen),
             "depth": str(max_depth),
             "candidates": "\n".join(rows),
             "retrieval": "",
@@ -159,6 +194,7 @@ def build_grade_prompt(
         {
             "fen": fen,
             "side_to_move": side_name,
+            "pieces": piece_list(fen),
             "played_move": played_move_san,
             "move_class_phrase": _CLASS_PHRASES[move_class],
             "win_before": f"{win_pct_before:.0f}",

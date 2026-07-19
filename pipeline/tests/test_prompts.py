@@ -13,11 +13,51 @@ from pipeline.prompts import (
     eval_phrase,
     fill,
     load_template,
+    piece_list,
     pv_to_san,
 )
 
 # Mate-in-2 sample puzzle (01gBD), White to move after the setup move.
 MATE_FEN = "2r4k/pb4pp/1p6/3pP3/3Pn3/2Pq2NQ/PP5P/5R1K w - - 0 24"
+
+
+# GOLDEN STRINGS — byte-identical assertions exist in
+# web/worker/lib/prompt.test.ts. If you change the format, change both or
+# the harness stops measuring the deployed prompt.
+GOLDEN_PIECE_LISTS = {
+    MATE_FEN: (
+        "White: Kh1, Qh3, Rf1, Ng3, pawns a2 b2 c3 d4 e5 h2\n"
+        "Black: Kh8, Qd3, Rc8, Bb7, Ne4, pawns a7 b6 d5 g7 h7"
+    ),
+    "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1": (
+        "White: Ke1, Qd1, Ra1, Rh1, Bc1, Bf1, Nb1, Ng1, "
+        "pawns a2 b2 c2 d2 e2 f2 g2 h2\n"
+        "Black: Ke8, Qd8, Ra8, Rh8, Bc8, Bf8, Nb8, Ng8, "
+        "pawns a7 b7 c7 d7 e7 f7 g7 h7"
+    ),
+    "8/8/8/8/8/8/8/K6k w - - 0 1": "White: Ka1\nBlack: Kh1",
+}
+
+
+@pytest.mark.parametrize(("fen", "expected"), GOLDEN_PIECE_LISTS.items())
+def test_piece_list_golden(fen, expected):
+    assert piece_list(fen) == expected
+
+
+def test_piece_list_states_the_squares_the_model_kept_inventing():
+    # Regression for the v1 bug: the model claimed a queen on h3 for Black
+    # (it is White's) and rooks on c2. The list must make both unambiguous.
+    text = piece_list(MATE_FEN)
+    assert "Qh3" in text.split("\n")[0]  # White's queen, not Black's
+    assert "c2" not in text  # nothing stands on c2
+
+
+def test_piece_list_is_included_in_both_prompts():
+    lines = [EngineLine(multipv=1, depth=20, pv=("h3c8", "b7c8", "f1f8"), cp=None, mate=2)]
+    candidates = build_candidates_prompt(MATE_FEN, lines)
+    assert GOLDEN_PIECE_LISTS[MATE_FEN] in candidates.user
+    grade = build_grade_prompt(MATE_FEN, "f1f8", "blunder", 100.0, 21.6, lines[0], lines[0])
+    assert GOLDEN_PIECE_LISTS[MATE_FEN] in grade.user
 
 
 def test_fill_raises_on_missing_variable():
@@ -56,10 +96,13 @@ def test_candidates_prompt_golden():
         EngineLine(multipv=2, depth=20, pv=("f1e1",), cp=150, mate=None),
     ]
     prompt = build_candidates_prompt(MATE_FEN, lines)
-    assert prompt.prompt_version == "explain-v1"
+    assert prompt.prompt_version == "explain-v2"
     assert prompt.user == (
         f"Position (FEN): {MATE_FEN}\n"
         "White to move.\n"
+        "\n"
+        "Pieces on the board:\n"
+        f"{GOLDEN_PIECE_LISTS[MATE_FEN]}\n"
         "\n"
         "Engine analysis, top candidate moves (searched to depth 20):\n"
         "1. 24. Qxc8+ Bxc8 25. Rf8# — White mates in 2\n"
@@ -83,6 +126,9 @@ def test_grade_prompt_contains_verdict_facts():
 
 def test_template_versions_exist():
     tpl = load_template()
-    assert tpl["version"] == "explain-v1"
+    assert tpl["version"] == "explain-v2"
     assert "{{candidates}}" in tpl["user"]["candidates"]
     assert "{{played_line}}" in tpl["user"]["grade"]
+    # The v2 fix is only real if BOTH prompts carry the piece list.
+    assert "{{pieces}}" in tpl["user"]["candidates"]
+    assert "{{pieces}}" in tpl["user"]["grade"]

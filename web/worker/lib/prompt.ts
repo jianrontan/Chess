@@ -13,7 +13,7 @@
  */
 
 import { Chess } from "chess.js";
-import template from "../../../prompts/explain.v1.json";
+import template from "../../../prompts/explain.v2.json";
 import type { ExplainRequest, WireLine, WireMoveClass } from "./schema";
 
 export const PROMPT_VERSION: string = template.version;
@@ -34,6 +34,54 @@ function fill(tpl: string, vars: Record<string, string>): string {
     if (v === undefined) throw new Error(`missing template variable: ${name}`);
     return v;
   });
+}
+
+/** K/Q/R/B/N then pawns — must match _PIECE_ORDER in pipeline/prompts.py. */
+const PIECE_ORDER: ReadonlyArray<["k" | "q" | "r" | "b" | "n", string]> = [
+  ["k", "K"],
+  ["q", "Q"],
+  ["r", "R"],
+  ["b", "B"],
+  ["n", "N"],
+];
+
+/**
+ * Exactly where every piece stands, one line per colour.
+ *
+ * Exists because the model demonstrably misreads raw FEN: 8.1% of v1
+ * explanations asserted a placement that was not on the board (measured
+ * over 545 puzzles — DECISIONS.md 2026-07-19). Output must be
+ * byte-identical to piece_list() in pipeline/prompts.py; golden strings
+ * are pinned in both test suites, because a prompt that differs between
+ * prod and the harness means the eval stops measuring the deployed system.
+ */
+export function pieceList(fen: string): string {
+  const board = new Chess(fen);
+  const squares = board
+    .board()
+    .flat()
+    .filter((sq): sq is NonNullable<typeof sq> => sq !== null);
+  const lines: string[] = [];
+  for (const [color, name] of [
+    ["w", "White"],
+    ["b", "Black"],
+  ] as const) {
+    const parts: string[] = [];
+    for (const [type, letter] of PIECE_ORDER) {
+      const found = squares
+        .filter((s) => s.color === color && s.type === type)
+        .map((s) => s.square)
+        .sort();
+      parts.push(...found.map((sq) => `${letter}${sq}`));
+    }
+    const pawns = squares
+      .filter((s) => s.color === color && s.type === "p")
+      .map((s) => s.square)
+      .sort();
+    if (pawns.length > 0) parts.push(`pawns ${pawns.join(" ")}`);
+    lines.push(`${name}: ${parts.length > 0 ? parts.join(", ") : "(none)"}`);
+  }
+  return lines.join("\n");
 }
 
 /**
@@ -120,6 +168,7 @@ export function buildPrompt(req: ExplainRequest): PromptResult {
     const user = fill(template.user.candidates, {
       fen: req.fen,
       side_to_move: sideName,
+      pieces: pieceList(req.fen),
       depth: String(maxDepth),
       candidates: rows.join("\n"),
       retrieval,
@@ -141,6 +190,7 @@ export function buildPrompt(req: ExplainRequest): PromptResult {
   const user = fill(template.user.grade, {
     fen: req.fen,
     side_to_move: sideName,
+    pieces: pieceList(req.fen),
     played_move: playedMoveSan,
     move_class_phrase: CLASS_PHRASES[req.verdict.moveClass],
     win_before: req.verdict.winPctBefore.toFixed(0),
