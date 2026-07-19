@@ -14,7 +14,10 @@
  * in scan-logic.ts where vitest covers it.
  */
 
-import * as ort from "onnxruntime-web";
+// The wasm-only bundle: the default entry pulls the 25.6MiB jsep/webgpu
+// runtime, which both busts the 25MiB asset limit and is pointless for a
+// 64-crop CNN. This build requests the plain ~11MB wasm from /ort/.
+import * as ort from "onnxruntime-web/wasm";
 import { enforceKings, gridToBoardFen, softmaxRows } from "@/lib/scan-logic";
 
 const MODEL_URL = "/models/squarenet-v5.int8.onnx";

@@ -10,14 +10,10 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const src = join(root, "node_modules", "onnxruntime-web", "dist");
 const dest = join(root, "public", "ort");
 
-// The runtime requests the JSEP variant by default (webgpu-capable build);
-// ship both so the loader finds whichever it asks for.
-const FILES = [
-  "ort-wasm-simd-threaded.mjs",
-  "ort-wasm-simd-threaded.wasm",
-  "ort-wasm-simd-threaded.jsep.mjs",
-  "ort-wasm-simd-threaded.jsep.wasm",
-];
+// scan-local.ts imports "onnxruntime-web/wasm" (pure-wasm build), which
+// requests exactly these two. The jsep/webgpu variant is 25.6MiB — over the
+// Workers 25MiB per-asset limit — and must never land in public/.
+const FILES = ["ort-wasm-simd-threaded.mjs", "ort-wasm-simd-threaded.wasm"];
 
 mkdirSync(dest, { recursive: true });
 for (const f of FILES) {
