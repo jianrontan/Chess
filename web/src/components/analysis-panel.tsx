@@ -9,12 +9,18 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { whiteScore } from "@/lib/engine/format";
+import { formatSanLine, uciToSan } from "@/lib/engine/san";
 import type { EngineLine } from "@/lib/engine/types";
 
 export interface AnalysisPanelProps {
   lines: EngineLine[];
+  /** The position the lines describe — SAN conversion replays from it. */
+  fen: string;
   sideToMove: "w" | "b";
   analyzing: boolean;
+  /** False while the engine is still initializing — the panel must not claim
+   * "Analyzing…" when nothing is running yet. */
+  engineReady: boolean;
   depth: number;
   gameOverText?: string;
   /** Rows to reserve while lines are empty, so the card height (and with it
@@ -26,8 +32,10 @@ export interface AnalysisPanelProps {
 
 export function AnalysisPanel({
   lines,
+  fen,
   sideToMove,
   analyzing,
+  engineReady,
   depth,
   gameOverText,
   placeholderRows = 3,
@@ -41,11 +49,13 @@ export function AnalysisPanel({
         <CardDescription>
           {gameOverText
             ? gameOverText
-            : analyzing
-              ? `Analyzing… depth ${depth}`
-              : depth > 0
-                ? `Depth ${depth}`
-                : "Waiting for position"}
+            : !engineReady
+              ? "Starting engine…"
+              : analyzing
+                ? `Analyzing… depth ${depth}`
+                : depth > 0
+                  ? `Depth ${depth}`
+                  : "Waiting for position"}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -66,10 +76,12 @@ export function AnalysisPanel({
                 ? lines.map((l) => (
                     <tr key={l.multipv} className="border-t align-top">
                       <td className="py-1.5 pr-3">{l.multipv}</td>
-                      <td className="py-1.5 pr-3 font-mono font-medium">{l.pv[0]}</td>
+                      <td className="py-1.5 pr-3 font-mono font-medium">
+                        {uciToSan(fen, [l.pv[0]])[0]}
+                      </td>
                       <td className="py-1.5 pr-3 font-mono">{whiteScore(l, sideToMove)}</td>
                       <td className="py-1.5 font-mono text-xs text-muted-foreground">
-                        {l.pv.slice(0, 6).join(" ")}
+                        {formatSanLine(fen, l.pv, 6)}
                       </td>
                     </tr>
                   ))
@@ -81,7 +93,11 @@ export function AnalysisPanel({
                       <td className="py-1.5 pr-3 font-mono font-medium">—</td>
                       <td className="py-1.5 pr-3 font-mono">—</td>
                       <td className="py-1.5 font-mono text-xs">
-                        {analyzing ? "searching…" : "waiting for position"}
+                        {!engineReady
+                          ? "starting engine…"
+                          : analyzing
+                            ? "searching…"
+                            : "waiting for position"}
                       </td>
                     </tr>
                   ))}
