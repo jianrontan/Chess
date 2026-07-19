@@ -2,14 +2,16 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
-import { Chessboard, type PieceDropHandlerArgs } from "react-chessboard";
+import { Chessboard, type Arrow, type PieceDropHandlerArgs } from "react-chessboard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { AnalysisPanel } from "@/components/analysis-panel";
 import { BoardEditor } from "@/components/board-editor";
+import { EvalBar } from "@/components/eval-bar";
 import { ExplanationCard } from "@/components/explanation-card";
 import { MoveVerdictCard } from "@/components/move-verdict";
-import type { MoveVerdict } from "@/lib/engine/grading";
+import { lineWinPct, type MoveVerdict } from "@/lib/engine/grading";
+import { whiteScore } from "@/lib/engine/format";
 import { useEngineAnalysis } from "@/lib/engine/use-engine";
 import {
   candidatesRequestBody,
@@ -26,6 +28,18 @@ import { ScanCrop } from "@/components/scan-crop";
 import { supportsCredentialless } from "@/lib/turnstile";
 
 const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+/** Board position stashed across the /turnstile detour (full page nav). */
+const PENDING_FEN_KEY = "chess:pending-fen";
+
+/** Verdict-arrow colors keyed by move class (played move); best move is green. */
+const ARROW_CLASS_COLOR: Record<MoveVerdict["moveClass"], string> = {
+  best: "#16a34a",
+  good: "#10b981",
+  inaccuracy: "#eab308",
+  mistake: "#f97316",
+  blunder: "#dc2626",
+};
 
 // Chessboard isn't memoized internally: unrelated page re-renders (each
 // streamed explanation chunk, engine status updates) would re-run it and can
@@ -69,6 +83,13 @@ export default function Home() {
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const gradeIdRef = useRef(0);
+  // A cancelled crop-scan must not apply its late result (the model download
+  // can take a while on first scan — Cancel stays clickable throughout).
+  const scanIdRef = useRef(0);
+  // Undo is only meaningful while chess.js holds move history; FEN loads,
+  // scans, and editor applies start a fresh game with none.
+  const [moveCount, setMoveCount] = useState(0);
+  const [showArrows, setShowArrows] = useState(true);
   // Position the last verdict was graded from — the grade explanation
   // must be requested against THAT fen, not the current one.
   const [gradedFen, setGradedFen] = useState<string | null>(null);
@@ -94,6 +115,32 @@ export default function Home() {
       .catch(() => {}); // offline/dev without worker — no banner
   }, []);
 
+  // Restore the position stashed before a /turnstile detour — the detour is
+  // a full page navigation, and losing the user's setup made "Verify now"
+  // punitive for exactly the browsers that need it. Async on purpose: the
+  // restore must run AFTER hydration (sessionStorage is client-only), and
+  // the lint bars synchronous setState in effect bodies.
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.resolve().then(() => {
+      if (cancelled) return;
+      try {
+        const saved = sessionStorage.getItem(PENDING_FEN_KEY);
+        if (!saved) return;
+        sessionStorage.removeItem(PENDING_FEN_KEY);
+        const game = new Chess(saved);
+        if (materialError(game)) return;
+        gameRef.current = game;
+        setFen(game.fen());
+      } catch {
+        // unreadable stash (private mode, corrupted value) — start fresh
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const sideToMove = useMemo(() => (fen.split(" ")[1] === "b" ? "b" : "w"), [fen]);
   // Derived from FEN alone (render must not read the ref). Note: threefold
   // repetition needs move history, so it isn't detected here — fine for now.
@@ -101,6 +148,42 @@ export default function Home() {
     const game = new Chess(fen);
     return { overText: gameOverText(game), inCheck: game.inCheck() };
   }, [fen]);
+
+  // Eval bar: White's win% from the freshest line of the CURRENT position
+  // (stale lines are sign-hazardous — same guard as the panel). Null while
+  // searching keeps the bar at its last value instead of snapping to 50.
+  const analysisFresh = analysis.fen === fen;
+  const topLine = analysisFresh ? analysis.lines[0] : undefined;
+  const evalWinPct = useMemo(() => {
+    if (!topLine) return null;
+    const pct = lineWinPct(topLine); // side-to-move perspective
+    return sideToMove === "w" ? pct : 100 - pct;
+  }, [topLine, sideToMove]);
+  const evalScoreText = topLine ? whiteScore(topLine, sideToMove) : "";
+
+  // Verdict arrows: played move colored by its class, best move in green.
+  // Hidden while a newer grade is pending (the verdict describes the
+  // previous move) and toggleable — some users find arrows noisy.
+  const verdictArrows = useMemo<Arrow[]>(() => {
+    if (!verdict || !showArrows || gradePending) return [];
+    const played = verdict.playedLine.pv[0];
+    const arrows: Arrow[] = [
+      {
+        startSquare: played.slice(0, 2),
+        endSquare: played.slice(2, 4),
+        color: ARROW_CLASS_COLOR[verdict.moveClass],
+      },
+    ];
+    const best = verdict.bestLine.pv[0];
+    if (best !== played) {
+      arrows.push({
+        startSquare: best.slice(0, 2),
+        endSquare: best.slice(2, 4),
+        color: ARROW_CLASS_COLOR.best,
+      });
+    }
+    return arrows;
+  }, [verdict, showArrows, gradePending]);
 
   // Latest analysis for event handlers, WITHOUT making the handlers (and
   // therefore the board options) change identity on every engine update —
@@ -148,6 +231,7 @@ export default function Home() {
           setGradeSkipped(v === null); // no baseline — say so instead of vanishing
           setGradePending(false);
         });
+        setMoveCount((c) => c + 1);
         clearExplanation();
         return true;
       } catch {
@@ -165,8 +249,9 @@ export default function Home() {
       onPieceDrop,
       boardOrientation: orientation,
       id: "main-board",
+      arrows: verdictArrows,
     }),
-    [fen, orientation, onPieceDrop],
+    [fen, orientation, onPieceDrop, verdictArrows],
   );
 
   function clearVerdict() {
@@ -181,8 +266,10 @@ export default function Home() {
   async function runExplain(body: ExplainRequest) {
     const id = ++explainIdRef.current;
     setExplanation({ text: "", streaming: true, error: "" });
+    // Outside the try: a mid-stream failure keeps the prose that already
+    // arrived instead of wiping what the user was reading.
+    let text = "";
     try {
-      let text = "";
       for await (const chunk of streamExplanation(body)) {
         if (explainIdRef.current !== id) return; // superseded — stop consuming
         text += chunk;
@@ -194,7 +281,7 @@ export default function Home() {
     } catch (e: unknown) {
       if (explainIdRef.current === id) {
         setExplanation({
-          text: "",
+          text,
           streaming: false,
           error: e instanceof Error ? e.message : "request failed",
         });
@@ -219,6 +306,7 @@ export default function Home() {
       setFen(gameRef.current.fen());
       setFenInput("");
       setFenError("");
+      setMoveCount(0);
       clearVerdict();
     } catch (e: unknown) {
       setFenError(e instanceof Error ? e.message : "Invalid FEN");
@@ -226,9 +314,18 @@ export default function Home() {
   }
 
   function reset() {
+    // An explanation is the one artifact that took real waiting to produce —
+    // don't let a stray Reset click destroy it silently.
+    if (
+      explanation?.text &&
+      !window.confirm("Discard the current explanation and start over?")
+    ) {
+      return;
+    }
     gameRef.current = new Chess(START_FEN);
     setFen(START_FEN);
     setFenError("");
+    setMoveCount(0);
     clearVerdict();
   }
 
@@ -282,28 +379,36 @@ export default function Home() {
 
   async function onCropConfirm(region: BoardRegion) {
     if (!cropImage) return;
+    // Cancel (which stays clickable) bumps the id — a late result from an
+    // abandoned scan must not reopen the editor under the user.
+    const scanId = ++scanIdRef.current;
     setScanBusy(true);
     setScanError("");
     try {
       const result = await scanRegion(cropImage.el, region);
+      if (scanIdRef.current !== scanId) return;
       setScanPreview(cropImage.url);
       setScannedFen(result.fen);
       setCropImage(null);
       setEditing(true);
     } catch {
-      // Local model unavailable (old browser, blocked wasm) — fall back to
-      // the server vision scan rather than dead-ending the user.
+      if (scanIdRef.current !== scanId) return;
+      // Local model unavailable (old browser, blocked wasm, stalled model
+      // download) — fall back to the server vision scan rather than
+      // dead-ending the user.
       try {
         const result = await scanImage(cropImage.url);
+        if (scanIdRef.current !== scanId) return;
         setScanPreview(cropImage.url);
         setScannedFen(result.fen);
         setCropImage(null);
         setEditing(true);
       } catch (e: unknown) {
+        if (scanIdRef.current !== scanId) return;
         setScanError(e instanceof Error ? e.message : "scan failed");
       }
     } finally {
-      setScanBusy(false);
+      if (scanIdRef.current === scanId) setScanBusy(false);
     }
   }
 
@@ -314,8 +419,11 @@ export default function Home() {
   }
 
   function undo() {
-    gameRef.current.undo();
+    // No history (position came from a FEN load/scan/editor) — the old code
+    // "undid" nothing but still wiped the verdict and explanation.
+    if (gameRef.current.undo() === null) return;
     setFen(gameRef.current.fen());
+    setMoveCount((c) => Math.max(0, c - 1));
     clearVerdict();
   }
 
@@ -335,7 +443,19 @@ export default function Home() {
               Your browser needs a quick one-time verification before
               explanations and scans will work.
             </span>
-            <Button size="sm" onClick={() => window.location.assign("/turnstile")}>
+            <Button
+              size="sm"
+              onClick={() => {
+                // Full-page detour: stash the board so the user's setup
+                // survives the round-trip (restored by the mount effect).
+                try {
+                  sessionStorage.setItem(PENDING_FEN_KEY, fen);
+                } catch {
+                  // storage unavailable — the detour still works, minus restore
+                }
+                window.location.assign("/turnstile");
+              }}
+            >
               Verify now
             </Button>
           </CardContent>
@@ -347,7 +467,10 @@ export default function Home() {
           of the (growing) right column, and react-chessboard's height:100%
           root distributes that surplus BETWEEN the ranks — the horizontal
           gaps that widened while explanations streamed in. */}
-      <div className="grid gap-6 lg:grid-cols-[480px_minmax(0,1fr)] lg:items-start">
+      {/* minmax(0,1fr) on the MOBILE track too: an implicit auto track is
+          content-sized, so any fixed-width child (the crop image) widened
+          its own container and escaped the viewport (measured 106px). */}
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[480px_minmax(0,1fr)] lg:items-start">
         <div className="flex w-full max-w-[480px] flex-col gap-4">
           {cropImage ? (
             <ScanCrop
@@ -358,8 +481,10 @@ export default function Home() {
               error={scanError}
               onConfirm={(region) => void onCropConfirm(region)}
               onCancel={() => {
+                scanIdRef.current++; // abandon any in-flight scan result
                 setCropImage(null);
                 setScanError("");
+                setScanBusy(false);
               }}
             />
           ) : editing ? (
@@ -385,10 +510,13 @@ export default function Home() {
                 // open would otherwise be silently discarded.
                 key={scannedFen ?? "manual"}
                 initialFen={scannedFen ?? fen}
+                // A screenshot can't say whose turn it is: force the choice.
+                requireSideChoice={scannedFen !== null}
                 onApply={(newFen) => {
                   gameRef.current = new Chess(newFen);
                   setFen(newFen);
                   setFenError("");
+                  setMoveCount(0);
                   clearVerdict();
                   closeEditor();
                 }}
@@ -420,16 +548,26 @@ export default function Home() {
               </div>
 
               {/* aspect-square guard: the board root fills its parent 100%,
-                  so its parent must always be exactly square. */}
-              <div className="aspect-square w-full">
-                <MemoChessboard options={boardOptions} />
+                  so its parent must always be exactly square. The eval bar
+                  stretches to the board's height beside it. */}
+              <div className="flex w-full gap-2">
+                <EvalBar winPct={evalWinPct} scoreText={evalScoreText} heightClass="self-stretch" />
+                <div className="aspect-square min-w-0 flex-1">
+                  <MemoChessboard options={boardOptions} />
+                </div>
               </div>
 
               <div className="flex flex-wrap gap-2">
                 <Button variant="outline" size="sm" onClick={reset}>
                   Reset
                 </Button>
-                <Button variant="outline" size="sm" onClick={undo}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={undo}
+                  disabled={moveCount === 0}
+                  title={moveCount === 0 ? "No moves to undo" : undefined}
+                >
                   Undo
                 </Button>
                 <Button
@@ -450,10 +588,9 @@ export default function Home() {
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={scanBusy}
                   onClick={() => fileInputRef.current?.click()}
                 >
-                  {scanBusy ? "Scanning…" : "Scan image"}
+                  Scan image
                 </Button>
                 <input
                   ref={fileInputRef}
@@ -468,6 +605,12 @@ export default function Home() {
                 />
               </div>
               {scanError && <p className="text-xs text-red-600">{scanError}</p>}
+
+              {/* The grading mode is otherwise invisible until stumbled upon. */}
+              <p className="text-xs text-muted-foreground">
+                Play a move to have it graded, or use the Explain buttons for
+                the engine&apos;s ideas.
+              </p>
 
               <div className="flex gap-2">
                 <input
@@ -491,6 +634,7 @@ export default function Home() {
         <div className="flex min-w-0 flex-col gap-4">
           <MoveVerdictCard
             verdict={verdict}
+            fen={gradedFen}
             pending={gradePending}
             skipped={gradeSkipped}
             explaining={explanation?.streaming === true}
@@ -499,6 +643,8 @@ export default function Home() {
                 ? () => runExplain(gradeRequestBody(gradedFen, verdict))
                 : undefined
             }
+            arrowsShown={showArrows}
+            onToggleArrows={() => setShowArrows((v) => !v)}
           />
           <AnalysisPanel
             // Lines are tagged with the fen they belong to. For ~debounce
@@ -506,10 +652,12 @@ export default function Home() {
             // position — rendering them under the new side to move would
             // flip every eval sign, so show placeholders until fresh lines
             // arrive (same guard the Explain button already uses).
-            lines={analysis.fen === fen ? analysis.lines : []}
+            lines={analysisFresh ? analysis.lines : []}
+            fen={fen}
             sideToMove={sideToMove}
-            analyzing={analysis.analyzing || analysis.fen !== fen}
-            depth={analysis.fen === fen ? analysis.depth : 0}
+            analyzing={engine.status === "ready" && (analysis.analyzing || !analysisFresh)}
+            engineReady={engine.status === "ready"}
+            depth={analysisFresh ? analysis.depth : 0}
             gameOverText={overText}
             action={
               <div className="flex gap-1">
@@ -540,11 +688,11 @@ export default function Home() {
                     engine.status !== "ready"
                   }
                   onClick={() => void runExplainOtherSide()}
-                  title="Analyzes the position as if it were the other side's turn"
+                  title="Analyzes a hypothetical: the same position with the other side to move"
                 >
                   {otherSideBusy
                     ? "Analyzing…"
-                    : `Explain for ${sideToMove === "w" ? "Black" : "White"}`}
+                    : `If it were ${sideToMove === "w" ? "Black" : "White"}'s turn…`}
                 </Button>
               </div>
             }
