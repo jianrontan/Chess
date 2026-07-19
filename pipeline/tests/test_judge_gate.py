@@ -6,7 +6,16 @@ against hand-computed values.
 
 import pytest
 
-from pipeline.judge_gate import ConfigResult, _agreement, _kappa, _split, report
+from pipeline.judge_gate import (
+    KAPPA_BAR,
+    ConfigResult,
+    _agreement,
+    _kappa,
+    _split,
+    _verdict,
+    report,
+    wilson_interval,
+)
 
 
 def test_agreement_exact_and_within_one():
@@ -60,22 +69,68 @@ def _result(name, model, pairs, cost_tokens=(1000, 200)):
     return r
 
 
+def test_wilson_interval_brackets_and_widens_when_small():
+    lo, hi = wilson_interval(85, 100)
+    assert lo < 0.85 < hi
+    assert lo < 0.80  # the whole point: 85/100 does NOT clear an 80% bar
+    lo40, hi40 = wilson_interval(34, 40)  # same 85%, fewer items
+    assert (hi40 - lo40) > (hi - lo)  # smaller n must be less certain
+
+
+def _spread_pairs(reps: int = 1) -> list[tuple[int, int]]:
+    """85% agreement over a realistically spread label distribution.
+
+    Skewed fixtures (nearly all 2s) trip the kappa condition before the CI
+    condition, which hides the behaviour under test — real label sets have
+    a mix, so the fixture must too. Kappa here is ~0.77.
+    """
+    pairs = (
+        [(2, 2)] * 40 + [(1, 1)] * 30 + [(0, 0)] * 15 + [(2, 1)] * 5 + [(1, 0)] * 5 + [(0, 1)] * 5
+    )
+    return pairs * reps
+
+
+def test_verdict_requires_ci_lower_bound_not_point_estimate():
+    marginal = _spread_pairs()
+    assert _agreement(marginal)[0] == pytest.approx(0.85)
+    assert _kappa(marginal) > KAPPA_BAR  # kappa is fine; only n is lacking
+    # 85% on 100 items looks like a pass and cannot support one.
+    assert _verdict(marginal).startswith("inconclusive")
+
+    # Identical rate, enough items for the interval to clear the bar.
+    assert _verdict(_spread_pairs(5)) == "**PASS**"
+
+
+def test_verdict_fails_a_distribution_parroting_judge():
+    # 80% raw agreement, kappa 0 — must fail on the kappa condition.
+    lazy = [(2, 2)] * 80 + [(0, 2)] * 10 + [(1, 2)] * 10
+    exact, _ = _agreement(lazy)
+    assert exact == 0.8
+    assert _verdict(lazy).startswith("fail (kappa")
+
+
 def test_report_recommends_cheapest_passing_config():
-    passing = [(2, 2)] * 9 + [(1, 1)]
-    failing = [(2, 0)] * 10
+    passing = ([(2, 2)] * 9 + [(0, 0)]) * 20
+    failing = [(2, 0)] * 200
     results = [
         _result("sonnet-high", "claude-sonnet-5", passing, (1400, 2000)),
         _result("haiku", "claude-haiku-4-5", failing, (1000, 120)),
     ]
-    text = report(results, n_labels=10, holdout=0.4)
+    text = report(results, n_labels=200, holdout=0.0)
     assert "**PASS**" in text
-    assert "Recommendation:" in text
     assert "sonnet-high" in text.split("Recommendation:")[1]
 
 
+def test_report_distinguishes_inconclusive_from_failed():
+    text = report([_result("sonnet-low", "claude-sonnet-5", _spread_pairs())], 100, 0.0)
+    assert "Inconclusive, not failed" in text
+    assert "do NOT revise the rubric" in text
+    assert "Recommendation:" not in text
+
+
 def test_report_refuses_to_recommend_when_nothing_passes():
-    results = [_result("haiku", "claude-haiku-4-5", [(2, 0)] * 10)]
-    text = report(results, n_labels=10, holdout=0.4)
+    results = [_result("haiku", "claude-haiku-4-5", [(2, 0)] * 100)]
+    text = report(results, n_labels=100, holdout=0.0)
     assert "No config passed" in text
     assert "unvalidated" in text
     assert "Recommendation:" not in text

@@ -38,6 +38,10 @@ from pipeline.judge_eval import _jobs_from_record, _side_name
 from pipeline.llm import AnthropicLLM
 
 GATE_BAR = 0.80
+# Raw agreement alone passes a judge that just parrots the label
+# distribution, so the gate also requires chance-corrected agreement.
+# 0.60 ("substantial") is the conventional floor for judge calibration.
+KAPPA_BAR = 0.60
 
 # $/1M tokens (input, output). Sonnet 5 intro pricing through 2026-08-31.
 PRICES = {"claude-sonnet-5": (2.0, 10.0), "claude-haiku-4-5": (1.0, 5.0)}
@@ -54,6 +58,24 @@ def _split(key: tuple[str, str], holdout: float) -> str:
     """Deterministic per-item split (no RNG — stable across reruns)."""
     h = zlib.crc32("|".join(key).encode("utf-8")) / 2**32
     return "holdout" if h < holdout else "tune"
+
+
+def wilson_interval(successes: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """95% Wilson score interval for a proportion.
+
+    The gate is a decision at a threshold, so the point estimate alone is
+    not enough: at n=100 an observed 85% carries a CI of roughly
+    [0.77, 0.91], which straddles the 80% bar — the measurement cannot
+    actually tell you whether the judge passed. The report prints this so
+    an indecisive result reads as "label more", not as a pass.
+    """
+    if n == 0:
+        return (0.0, 0.0)
+    p = successes / n
+    denom = 1 + z**2 / n
+    center = (p + z**2 / (2 * n)) / denom
+    half = z * ((p * (1 - p) / n + z**2 / (4 * n**2)) ** 0.5) / denom
+    return (max(0.0, center - half), min(1.0, center + half))
 
 
 def _kappa(pairs: list[tuple[int, int]]) -> float:
@@ -83,11 +105,46 @@ class ConfigResult:
     out_tokens: int
     judged: int
 
+    def gate_pairs(self) -> list[tuple[int, int]]:
+        """Items the verdict is computed on.
+
+        With the default holdout of 0 every label counts, which is the
+        right use of scarce human effort when no rubric revision has
+        happened — there is nothing to overfit to yet. Splitting only
+        matters once you tune, and the honest way to re-test after a
+        revision is a FRESH batch of labels, not a slice reserved in
+        advance (see the module docstring).
+        """
+        return self.pairs["holdout"] or self.pairs["tune"]
+
     def cost_per_judgment(self) -> float:
         if not self.judged:
             return 0.0
         pin, pout = PRICES[self.model]
         return (self.in_tokens / self.judged * pin + self.out_tokens / self.judged * pout) / 1e6
+
+
+def _verdict(pairs: list[tuple[int, int]]) -> str:
+    """PASS only when the measurement can actually support it.
+
+    Requires the CI's LOWER bound to clear the bar, not the point
+    estimate — an observed 85% on 40 items is consistent with true 70%,
+    and calling that a pass is how unvalidated judges get shipped. A
+    point estimate above the bar with a straddling CI is reported as
+    inconclusive, whose remedy is more labels, not a different judge.
+    """
+    if not pairs:
+        return "no data"
+    exact, _ = _agreement(pairs)
+    lo, _hi = wilson_interval(sum(1 for a, b in pairs if a == b), len(pairs))
+    kappa = _kappa(pairs)
+    if kappa < KAPPA_BAR:
+        return f"fail (kappa {kappa:.2f} < {KAPPA_BAR:.2f})"
+    if lo >= GATE_BAR:
+        return "**PASS**"
+    if exact >= GATE_BAR:
+        return "inconclusive — label more"
+    return "fail"
 
 
 def _agreement(pairs: list[tuple[int, int]]) -> tuple[float, float]:
@@ -146,24 +203,25 @@ def report(results: list[ConfigResult], n_labels: int, holdout: float) -> str:
     out: list[str] = []
     out.append("# Judge validation gate")
     out.append("")
+    split_note = f"holdout {holdout:.0%}" if holdout else "all labels scored"
     out.append(
-        f"{n_labels} human labels | holdout {holdout:.0%} | bar = {GATE_BAR:.0%} "
-        "exact agreement on holdout"
+        f"{n_labels} human labels | {split_note} | bar = {GATE_BAR:.0%} agreement "
+        f"(CI lower bound) AND kappa >= {KAPPA_BAR:.2f}"
     )
     out.append("")
     out.append(
-        "| config | cost/judgment | tune exact | holdout exact | within-1 | "
-        "kappa | errors | verdict |"
+        "| config | cost/judgment | agreement | 95% CI | within-1 | kappa | errors | verdict |"
     )
     out.append("|---|---|---|---|---|---|---|---|")
     for r in sorted(results, key=lambda x: x.cost_per_judgment()):
-        tune_exact, _ = _agreement(r.pairs["tune"])
-        hold_exact, hold_within1 = _agreement(r.pairs["holdout"])
-        kappa = _kappa(r.pairs["holdout"])
-        verdict = "**PASS**" if hold_exact >= GATE_BAR else "fail"
+        pairs = r.gate_pairs()
+        exact, within1 = _agreement(pairs)
+        lo, hi = wilson_interval(sum(1 for a, b in pairs if a == b), len(pairs))
+        kappa = _kappa(pairs)
         out.append(
-            f"| {r.name} | ${r.cost_per_judgment():.5f} | {tune_exact:.0%} | "
-            f"{hold_exact:.0%} | {hold_within1:.0%} | {kappa:.2f} | {r.errors} | {verdict} |"
+            f"| {r.name} | ${r.cost_per_judgment():.5f} | {exact:.0%} | "
+            f"[{lo:.0%}, {hi:.0%}] | {within1:.0%} | {kappa:.2f} | {r.errors} | "
+            f"{_verdict(pairs)} |"
         )
     out.append("")
 
@@ -181,25 +239,38 @@ def report(results: list[ConfigResult], n_labels: int, holdout: float) -> str:
         out.append(f"| {r.name} | " + " | ".join(cells) + " |")
     out.append("")
 
-    passing = [r for r in results if _agreement(r.pairs["holdout"])[0] >= GATE_BAR]
+    passing = [r for r in results if _verdict(r.gate_pairs()) == "**PASS**"]
+    inconclusive = [r for r in results if _verdict(r.gate_pairs()).startswith("inconclusive")]
     if passing:
         best = min(passing, key=lambda r: r.cost_per_judgment())
         out.append(
             f"**Recommendation:** `{best.name}` — cheapest config clearing the "
             f"{GATE_BAR:.0%} bar at ${best.cost_per_judgment():.5f}/judgment."
         )
+    elif inconclusive:
+        names = ", ".join(f"`{r.name}`" for r in inconclusive)
+        out.append(
+            f"**Inconclusive, not failed.** {names} scored above the bar, but the "
+            "confidence interval still includes values below it — these labels "
+            "cannot yet separate a passing judge from a failing one. Add labels "
+            "and re-run; do NOT revise the rubric on this evidence."
+        )
     else:
         out.append(
             "**No config passed.** The roadmap allows ONE rubric revision: edit "
-            "prompts/judge.v1.json (bump to v2), then re-run. Tune against the "
-            "tune split and keep the holdout verdict honest. If nothing passes "
-            "after that, report the judge as unvalidated rather than shipping "
-            "numbers it cannot support."
+            "prompts/judge.v1.json (bump to v2), re-run, and re-test on a FRESH "
+            "batch of labels rather than the ones the revision was tuned against. "
+            "If nothing passes after that, report the judge as unvalidated rather "
+            "than shipping numbers it cannot support."
         )
     out.append("")
     out.append(
-        "_Kappa near 0 means the judge is only matching the label distribution — "
-        "treat a high raw agreement with low kappa as a failed gate._"
+        f"_Both conditions required: agreement CI lower bound >= {GATE_BAR:.0%} AND "
+        f"kappa >= {KAPPA_BAR:.2f}. Kappa near 0 means the judge is only matching "
+        "the label distribution, so high raw agreement with low kappa is a "
+        "failure. Precision is driven by the count of MINORITY-class labels (the "
+        "0s and 1s), not the total — if failures are rare in your labels, you need "
+        "more than the headline n suggests._"
     )
     return "\n".join(out)
 
@@ -210,7 +281,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", required=True)
     parser.add_argument("--configs", default="sonnet-high,sonnet-low,haiku")
-    parser.add_argument("--holdout", type=float, default=0.4)
+    parser.add_argument(
+        "--holdout",
+        type=float,
+        default=0.0,
+        help="reserve a fraction for a post-revision re-test. Default 0: with "
+        "no rubric revision there is nothing to overfit, and splitting scarce "
+        "human labels only widens the CI. Re-test a revision on FRESH labels.",
+    )
     parser.add_argument("--out", default=None, help="write the report here too")
     args = parser.parse_args(argv)
 

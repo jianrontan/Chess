@@ -1,7 +1,7 @@
 """Hand-labeling CLI for the judge validation gate.
 
 Usage:
-    uv run python -m pipeline.label --run data/eval_runs/gate.jsonl [--target 100]
+    uv run python -m pipeline.label --run data/eval_runs/gate.jsonl [--target 150]
 
 You are the ground truth here. This tool shows one explanation at a time
 beside everything needed to grade it — the board, the puzzle's theme tags,
@@ -121,7 +121,15 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", required=True, help="a completed run JSONL")
-    parser.add_argument("--target", type=int, default=100, help="stop after this many labels exist")
+    parser.add_argument(
+        "--target",
+        type=int,
+        default=150,
+        help="stop after this many labels exist. 150 not 100: at 100 an "
+        "observed 85%% agreement carries a CI near [77%%, 91%%], straddling "
+        "the 80%% gate bar so it cannot decide it. Precision is driven by the "
+        "count of MINORITY labels (0s and 1s) — if most scores are 2s, more.",
+    )
     args = parser.parse_args(argv)
 
     run_path = Path(args.run)
