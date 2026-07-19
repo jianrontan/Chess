@@ -29,12 +29,18 @@ import chess
 from pipeline.grading import line_win_pct
 
 # Unambiguous SAN move tokens: castling, piece moves, captures, promotions.
+# The trailing (?!-[a-h][1-8]) rejects long-algebraic "Qb7-c8": there the
+# leading token is the FROM square, not a move, and counting it as one
+# reported a false hallucination on real output.
 _DEFINITE_RE = re.compile(
     r"\b(O-O(?:-O)?|[KQRBN][a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?|[a-h]x[a-h][1-8](?:=[QRBN])?"
-    r"|[a-h][18]=[QRBN])[+#]?"
+    r"|[a-h][18]=[QRBN])[+#]?(?!-[a-h][1-8])"
 )
 # Bare pawn pushes are claims only when numbered: "12. e4" / "3... e5".
-_NUMBERED_PAWN_RE = re.compile(r"\b\d+\.(?:\.\.)?\s*([a-h][1-8])\b")
+# (?!\s*=) keeps "43. g8=Q+" from also matching as a bare push to g8 —
+# the promotion itself is caught by _DEFINITE_RE, and double-counting it
+# produced a false hallucination (g8 is not in the lines; g8=Q is).
+_NUMBERED_PAWN_RE = re.compile(r"\b\d+\.(?:\.\.)?\s*([a-h][1-8])(?!\s*=)\b")
 
 # Win% (mover perspective) within which two moves count as equally good.
 EQUIV_WIN_PCT = 3.0

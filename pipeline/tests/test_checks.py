@@ -27,6 +27,18 @@ def test_bare_squares_are_not_claims_unless_numbered():
     assert extract_move_claims("the game began 1. e4 e5 and later 12... d5") == ["e4", "d5"]
 
 
+def test_numbered_promotion_is_one_claim_not_two():
+    # Regression: real output "43. g8=Q+" matched BOTH the promotion and a
+    # bare push to g8, and the phantom g8 read as a hallucinated move.
+    assert extract_move_claims("White wins with 43. g8=Q+ and mates.") == ["g8=Q"]
+
+
+def test_long_algebraic_from_square_is_not_a_claim():
+    # Regression: "Qb7-c8" is one move written long-form; counting the
+    # leading Qb7 as a separate move reported a false hallucination.
+    assert extract_move_claims("The queen goes Qb7-c8, promoting.") == []
+
+
 def test_groundedness_pass_and_fail():
     ok = check_groundedness("Qxc8+ forces Bxc8, and Rf8# ends it.", MATE_FEN, [MATE_PV])
     assert ok.grounded
