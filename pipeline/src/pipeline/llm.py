@@ -78,6 +78,17 @@ class AnthropicLLM:
         self.name = f"anthropic:{model}" + (f":effort-{effort}" if effort else "")
 
     def complete(self, system: str, user: str, *, max_tokens: int = MAX_OUTPUT_TOKENS) -> str:
+        text, _ = self.complete_with_usage(system, user, max_tokens=max_tokens)
+        return text
+
+    def complete_with_usage(
+        self, system: str, user: str, *, max_tokens: int = MAX_OUTPUT_TOKENS
+    ) -> tuple[str, tuple[int, int]]:
+        """Same call, also returning (input_tokens, output_tokens).
+
+        The judge gate prices configurations from measured usage rather
+        than estimates, so it needs the counts the plain API hides.
+        """
         extra = {"output_config": {"effort": self.effort}} if self.effort else {}
         response = self._client.messages.create(
             model=self.model,
@@ -86,7 +97,8 @@ class AnthropicLLM:
             messages=[{"role": "user", "content": user}],
             **extra,
         )
-        return "".join(block.text for block in response.content if block.type == "text")
+        text = "".join(block.text for block in response.content if block.type == "text")
+        return text, (response.usage.input_tokens, response.usage.output_tokens)
 
 
 def make_llm(kind: str, model: str = DEFAULT_MODEL, effort: str | None = None) -> LLM:

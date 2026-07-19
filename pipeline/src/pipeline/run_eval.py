@@ -28,6 +28,9 @@ import argparse
 import json
 import random
 import sys
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
 from pathlib import Path
 
@@ -243,6 +246,12 @@ def main(argv: list[str] | None = None) -> int:
         help="head-slice for smoke tests only; biased (the sample is id-sorted)",
     )
     parser.add_argument("--threads", type=int, default=2, help="engine threads")
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=6,
+        help="puzzles in flight; the sweep is LLM-latency-bound, not CPU-bound",
+    )
     args = parser.parse_args(argv)
 
     sample_path = Path(args.sample)
@@ -274,17 +283,47 @@ def main(argv: list[str] | None = None) -> int:
         todo = [r for r in records if r["puzzle_id"] not in done]
         if args.limit is not None:
             todo = todo[: args.limit]
-        print(f"{len(records)} sampled, {len(done)} done, running {len(todo)}")
+        print(
+            f"{len(records)} sampled, {len(done)} done, running {len(todo)} "
+            f"with {args.concurrency} workers"
+        )
 
-        with out_path.open("a", encoding="utf-8") as out:
-            for i, rec in enumerate(todo, 1):
-                result = run_puzzle(
-                    rec, engine, llm, template, depth=args.depth, multipv=args.multipv
-                )
-                out.write(json.dumps(result, ensure_ascii=False) + "\n")
-                out.flush()
-                if i % 10 == 0 or i == len(todo):
-                    print(f"  {i}/{len(todo)} ({rec['puzzle_id']})")
+        # Engine work is ~0.4s/puzzle and lock-serialized; LLM calls are
+        # seconds each and are what concurrency actually buys. Results are
+        # written as they complete (order is not meaningful — resume keys
+        # on puzzle_id), each line flushed so a kill loses at most the
+        # in-flight puzzles.
+        write_lock = threading.Lock()
+        failures: list[tuple[str, str]] = []
+        started = time.monotonic()
+
+        def work(rec: dict) -> str:
+            return run_puzzle(rec, engine, llm, template, depth=args.depth, multipv=args.multipv)
+
+        with (
+            out_path.open("a", encoding="utf-8") as out,
+            ThreadPoolExecutor(max_workers=args.concurrency) as pool,
+        ):
+            futures = {pool.submit(work, rec): rec for rec in todo}
+            for i, future in enumerate(as_completed(futures), 1):
+                rec = futures[future]
+                try:
+                    result = future.result()
+                except Exception as e:  # one bad puzzle must not kill a sweep
+                    failures.append((rec["puzzle_id"], f"{type(e).__name__}: {e}"))
+                    continue
+                with write_lock:
+                    out.write(json.dumps(result, ensure_ascii=False) + "\n")
+                    out.flush()
+                if i % 25 == 0 or i == len(todo):
+                    rate = i / max(time.monotonic() - started, 1e-9)
+                    eta = (len(todo) - i) / rate / 60
+                    print(f"  {i}/{len(todo)}  {rate * 60:.0f}/min  eta {eta:.0f}m")
+
+    if failures:
+        print(f"\n{len(failures)} puzzle(s) failed (rerun to retry — resume skips the rest):")
+        for pid, err in failures[:10]:
+            print(f"  {pid}: {err}")
     return 0
 
 
