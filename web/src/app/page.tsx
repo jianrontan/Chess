@@ -21,6 +21,8 @@ import {
 import { materialError } from "@/lib/editor";
 import { flipSideToMove } from "@/lib/engine/fen";
 import { fileToDataUrl, scanImage } from "@/lib/scan";
+import { scanRegion, type BoardRegion } from "@/lib/scan-local";
+import { ScanCrop } from "@/components/scan-crop";
 import { supportsCredentialless } from "@/lib/turnstile";
 
 const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -59,6 +61,12 @@ export default function Home() {
   const [scannedFen, setScannedFen] = useState<string | null>(null);
   const [scanBusy, setScanBusy] = useState(false);
   const [scanError, setScanError] = useState("");
+  // Crop step for the CLIENT-SIDE scan (vision model): the uploaded image
+  // element + its data URL, shown with a draggable square selector.
+  const [cropImage, setCropImage] = useState<{
+    url: string;
+    el: HTMLImageElement;
+  } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const gradeIdRef = useRef(0);
   // Position the last verdict was graded from — the grade explanation
@@ -256,17 +264,44 @@ export default function Home() {
     }
   }
 
+  // Scan flow v2: load the image and open the CROP step — recognition then
+  // runs client-side (vision model, see scan-local.ts). The image never
+  // leaves the device.
   async function onScanFile(file: File) {
-    setScanBusy(true);
     setScanError("");
     try {
       const dataUrl = await fileToDataUrl(file);
-      const result = await scanImage(dataUrl);
-      setScanPreview(dataUrl);
-      setScannedFen(result.fen);
-      setEditing(true);
+      const el = new Image();
+      el.src = dataUrl;
+      await el.decode();
+      setCropImage({ url: dataUrl, el });
     } catch (e: unknown) {
-      setScanError(e instanceof Error ? e.message : "scan failed");
+      setScanError(e instanceof Error ? e.message : "could not read that image");
+    }
+  }
+
+  async function onCropConfirm(region: BoardRegion) {
+    if (!cropImage) return;
+    setScanBusy(true);
+    setScanError("");
+    try {
+      const result = await scanRegion(cropImage.el, region);
+      setScanPreview(cropImage.url);
+      setScannedFen(result.fen);
+      setCropImage(null);
+      setEditing(true);
+    } catch {
+      // Local model unavailable (old browser, blocked wasm) — fall back to
+      // the server vision scan rather than dead-ending the user.
+      try {
+        const result = await scanImage(cropImage.url);
+        setScanPreview(cropImage.url);
+        setScannedFen(result.fen);
+        setCropImage(null);
+        setEditing(true);
+      } catch (e: unknown) {
+        setScanError(e instanceof Error ? e.message : "scan failed");
+      }
     } finally {
       setScanBusy(false);
     }
@@ -314,7 +349,20 @@ export default function Home() {
           gaps that widened while explanations streamed in. */}
       <div className="grid gap-6 lg:grid-cols-[480px_minmax(0,1fr)] lg:items-start">
         <div className="flex w-full max-w-[480px] flex-col gap-4">
-          {editing ? (
+          {cropImage ? (
+            <ScanCrop
+              imageUrl={cropImage.url}
+              imageW={cropImage.el.naturalWidth}
+              imageH={cropImage.el.naturalHeight}
+              busy={scanBusy}
+              error={scanError}
+              onConfirm={(region) => void onCropConfirm(region)}
+              onCancel={() => {
+                setCropImage(null);
+                setScanError("");
+              }}
+            />
+          ) : editing ? (
             <>
               {scanPreview && (
                 <div className="space-y-1">
@@ -325,7 +373,7 @@ export default function Home() {
                     className="max-h-56 w-full rounded-md border object-contain"
                   />
                   <p className="text-xs text-muted-foreground">
-                    Check the board against your photo — if it reads
+                    Check the board against your screenshot — if it reads
                     upside-down, hit &quot;Rotate 180°&quot;; fix any squares,
                     then set who moves before applying.
                   </p>

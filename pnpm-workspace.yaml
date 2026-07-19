@@ -3,6 +3,7 @@ packages:
 
 allowBuilds:
   esbuild: true
+  protobufjs: false
   sharp: true
   stockfish: true
   unrs-resolver: true

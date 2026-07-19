@@ -38,6 +38,8 @@ yarn-error.log*
 
 # Engine WASM builds (copied from node_modules by web/scripts/copy-engine.mjs)
 web/public/engine/
+# ONNX Runtime WASM (copied from node_modules by web/scripts/copy-ort.mjs)
+web/public/ort/
 
 # ---------- Python (pipeline) ----------
 __pycache__/
@@ -62,6 +64,8 @@ vision/runs/
 # Model artifacts anywhere (defense in depth — training normally writes to
 # vision/runs/, but a stray checkpoint must never land in git)
 *.onnx
+# The shipped scan model IS committed (small, versioned artifact)
+!web/public/models/*.onnx
 *.pt
 *.pth
 checkpoints/
