@@ -97,11 +97,17 @@ the project's signature move: we control the renderer, so labeled data is free.
 - [ ] *Accuracy gate: >=99.5% square-level on HELD-OUT piece sets/themes +
       a hand-collected set of real Lichess/chess.com screenshots; the model
       ships only when the gate report passes (report lives in the repo)
-- [ ] Browser runtime: onnxruntime-web (lazy-loaded, cached), board-bounds
-      auto-detect + draggable crop box, wired behind "Scan image"; editor
-      confirm screen stays as the safety net
-- [ ] Side-by-side eval vs the LLM scan on the same screenshot set; retire
-      /api/scan when CV wins
+- [x] Browser runtime: onnxruntime-web wasm-only build (lazy dynamic import;
+      the jsep build busts the 25MiB asset limit), draggable square crop
+      box, 215KB int8 model + king-constraint fix, wired behind "Scan
+      image"; editor confirm stays as the safety net; /api/scan remains as
+      automatic fallback. E2E verified in PROD: real Lichess screenshot ->
+      upload -> crop -> local inference -> exact position in the editor.
+      NOTE: no orientation auto-detect — provably impossible from piece
+      placement (back-rank pawns are rotation-invariant); White-bottom
+      default + Rotate 180°.
+- [ ] Broaden the real-screenshot exam (more Lichess themes, chess.com,
+      screenshots-with-UI for crop exercise), then retire /api/scan
 - [x] Board editor v2 (NCM-style): explicit castling checkboxes (gated by
       placement availability), capture-all, flip, PGN import (final
       position), promotion-aware material validation (8P+2Q rejected,
