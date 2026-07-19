@@ -35,17 +35,43 @@ function getOrt(): Promise<OrtModule> {
   return ortPromise;
 }
 
+/** First-scan download budget (ORT wasm + model). A stalled fetch must REJECT
+ * so the caller's /api/scan fallback can take over — a hang here used to
+ * dead-end the crop screen with Cancel disabled. */
+const LOAD_TIMEOUT_MS = 20_000;
+
+function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${what} timed out`)), ms);
+    p.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e: unknown) => {
+        clearTimeout(timer);
+        reject(e instanceof Error ? e : new Error(String(e)));
+      },
+    );
+  });
+}
+
 function getSession(): Promise<InferenceSession> {
   if (!sessionPromise) {
-    sessionPromise = getOrt().then((ort) => {
-      ort.env.wasm.wasmPaths = "/ort/";
-      ort.env.wasm.numThreads = 1; // 64 tiny crops — threading buys nothing
-      return ort.InferenceSession.create(MODEL_URL, {
-        executionProviders: ["wasm"],
-      });
-    });
+    sessionPromise = withTimeout(
+      getOrt().then((ort) => {
+        ort.env.wasm.wasmPaths = "/ort/";
+        ort.env.wasm.numThreads = 1; // 64 tiny crops — threading buys nothing
+        return ort.InferenceSession.create(MODEL_URL, {
+          executionProviders: ["wasm"],
+        });
+      }),
+      LOAD_TIMEOUT_MS,
+      "recognition model load",
+    );
     sessionPromise.catch(() => {
       sessionPromise = null; // transient load failure must not stick forever
+      ortPromise = null; // the stalled import may itself be the culprit
     });
   }
   return sessionPromise;
@@ -95,7 +121,13 @@ export async function scanRegion(
   image: HTMLImageElement | ImageBitmap,
   region: BoardRegion,
 ): Promise<LocalScanResult> {
-  const [ort, session] = await Promise.all([getOrt(), getSession()]);
+  // The whole load races the timeout — a hung dynamic import would otherwise
+  // bypass getSession's internal deadline via this parallel getOrt() await.
+  const [ort, session] = await withTimeout(
+    Promise.all([getOrt(), getSession()]),
+    LOAD_TIMEOUT_MS,
+    "recognition model load",
+  );
   const floats = regionToFloats(image, region);
   const input: OrtTensor = new ort.Tensor("float32", floats, [64, 3, CROP, CROP]);
   const output = await session.run({ squares: input });

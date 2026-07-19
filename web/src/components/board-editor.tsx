@@ -39,22 +39,33 @@ export function BoardEditor({
   initialFen,
   onApply,
   onCancel,
+  requireSideChoice = false,
 }: {
   initialFen: string;
   onApply: (fen: string) => void;
   onCancel: () => void;
+  /** Scan mode: an image cannot say whose turn it is, so side-to-move starts
+   * UNSET and Apply is blocked until the user states it — a silent
+   * White default made the engine confidently analyze the wrong side. */
+  requireSideChoice?: boolean;
 }) {
   // skipValidation: mid-edit positions are allowed to be arbitrary.
   const placementRef = useRef(new Chess(initialFen, { skipValidation: true }));
   const [position, setPosition] = useState(() =>
     new Chess(initialFen, { skipValidation: true }).fen(),
   );
-  const [side, setSide] = useState<"w" | "b">(
-    initialFen.split(" ")[1] === "b" ? "b" : "w",
-  );
+  const [side, setSide] = useState<"w" | "b" | null>(() => {
+    if (requireSideChoice) return null;
+    return initialFen.split(" ")[1] === "b" ? "b" : "w";
+  });
   // The user's castling wishes; what's actually emitted is wishes ∩ available.
+  // Scan mode: the image can't say castling rights either, so default to
+  // "everything placement allows" (Lichess-editor convention) instead of the
+  // scanned FEN's empty "-", which silently stripped rights on apply.
   const [castling, setCastling] = useState<CastlingChoice>(() =>
-    castlingFromFen(initialFen),
+    requireSideChoice
+      ? { K: true, Q: true, k: true, q: true }
+      : castlingFromFen(initialFen),
   );
   const [orientation, setOrientation] = useState<"white" | "black">("white");
   const [pgnOpen, setPgnOpen] = useState(false);
@@ -140,6 +151,10 @@ export function BoardEditor({
   }
 
   function apply() {
+    if (side === null) {
+      setError("Set who moves first — the screenshot can't tell us.");
+      return;
+    }
     const result = buildEditorFen(placementRef.current, side, castling);
     if (result.error || !result.fen) {
       setError(result.error ?? "Invalid position");
@@ -234,6 +249,11 @@ export function BoardEditor({
           >
             Black
           </Button>
+          {side === null && (
+            <span className="ml-1 font-medium text-amber-600">
+              ← choose before analyzing
+            </span>
+          )}
         </div>
 
         <fieldset className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
@@ -261,7 +281,7 @@ export function BoardEditor({
         </p>
 
         <div className="flex gap-2">
-          <Button size="sm" onClick={apply}>
+          <Button size="sm" onClick={apply} disabled={side === null}>
             Analyze this position
           </Button>
           <Button variant="outline" size="sm" onClick={onCancel}>
