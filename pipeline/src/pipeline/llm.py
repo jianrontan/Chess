@@ -56,7 +56,12 @@ class AnthropicLLM:
     """Real client. Import of the sdk is deferred so keyless environments
     (CI, tests) never need the dependency exercised."""
 
-    def __init__(self, model: str = DEFAULT_MODEL, api_key: str | None = None):
+    def __init__(
+        self,
+        model: str = DEFAULT_MODEL,
+        api_key: str | None = None,
+        effort: str | None = None,
+    ):
         import anthropic
 
         key = api_key or os.environ.get("ANTHROPIC_API_KEY")
@@ -64,22 +69,30 @@ class AnthropicLLM:
             raise RuntimeError("ANTHROPIC_API_KEY is not set")
         self._client = anthropic.Anthropic(api_key=key)
         self.model = model
-        self.name = f"anthropic:{model}"
+        # Reasoning effort (low|medium|high|max). On thinking-by-default
+        # models this is the dominant cost lever for the judge: measured
+        # 1986 -> 204 output tokens/judgment going high -> low, a 4.7x
+        # cost cut. Which effort is GOOD ENOUGH is decided by the
+        # validation gate, never assumed — see judge.py.
+        self.effort = effort
+        self.name = f"anthropic:{model}" + (f":effort-{effort}" if effort else "")
 
     def complete(self, system: str, user: str, *, max_tokens: int = MAX_OUTPUT_TOKENS) -> str:
+        extra = {"output_config": {"effort": self.effort}} if self.effort else {}
         response = self._client.messages.create(
             model=self.model,
             max_tokens=max_tokens,
             system=system,
             messages=[{"role": "user", "content": user}],
+            **extra,
         )
         return "".join(block.text for block in response.content if block.type == "text")
 
 
-def make_llm(kind: str, model: str = DEFAULT_MODEL) -> LLM:
+def make_llm(kind: str, model: str = DEFAULT_MODEL, effort: str | None = None) -> LLM:
     """CLI factory: "fake" or "anthropic"."""
     if kind == "fake":
         return FakeLLM()
     if kind == "anthropic":
-        return AnthropicLLM(model=model)
+        return AnthropicLLM(model=model, effort=effort)
     raise ValueError(f"unknown llm kind: {kind}")

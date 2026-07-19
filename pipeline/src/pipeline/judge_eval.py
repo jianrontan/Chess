@@ -81,13 +81,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run", required=True)
     parser.add_argument("--llm", choices=["fake", "anthropic"], default="anthropic")
     parser.add_argument("--model", default=DEFAULT_JUDGE_MODEL)
+    parser.add_argument(
+        "--effort",
+        choices=["low", "medium", "high", "max"],
+        default=None,
+        help="reasoning effort; the dominant judge cost lever (low is ~4.7x "
+        "cheaper than high). Validate any choice against hand labels first.",
+    )
     parser.add_argument("--limit", type=int, default=None)
     args = parser.parse_args(argv)
 
     run_path = Path(args.run)
     out_path = run_path.with_suffix(".judged.jsonl")
     template = load_judge_template()
-    llm = make_llm(args.llm, args.model)
+    llm = make_llm(args.llm, args.model, effort=args.effort)
 
     jobs: list[dict] = []
     with run_path.open(encoding="utf-8") as f:
