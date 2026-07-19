@@ -28,7 +28,10 @@ def main() -> int:
 
     failures = []
     if py:
-        r = run("uv run --project pipeline pytest -q -x", root)
+        # cwd must be pipeline/ (not root): from the root, pytest collects
+        # vision/tests too, which needs vision's venv (numpy/torch), not
+        # pipeline's. Mirrors CI, which runs with working-directory: pipeline.
+        r = run("uv run pytest -q -x", os.path.join(root, "pipeline"))
         if r.returncode != 0:
             failures.append("pytest failed:\n" + (r.stdout + r.stderr)[-3000:])
     if ts:
