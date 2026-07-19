@@ -137,9 +137,19 @@ The differentiator. Build it before RAG so RAG has a scoreboard on arrival.
 - [x] *LLM-judge (`pipeline.judge_eval`, prompts/judge.v1.json): Sonnet 5 judges
       Haiku output (0/1/2 rubric + failure category, JSON-only, errors recorded);
       needs max_tokens 8000 — Sonnet 5 thinks ~2.5k tokens before the verdict
+- [x] Deterministic quality proxies (`pipeline.metrics`, FREE — no API spend, run
+      on every sweep): theme-vocabulary naming (recall proxy for "right idea"),
+      piece-placement validity (checks "the rook on a8" against the root position
+      AND every position along the given lines), mate-claim consistency (invented
+      vs missed forced mates). Proxies only — measured n=3 disagreement with the
+      judge in BOTH directions (a correct explanation that never says "back rank";
+      vocabulary is gameable), and none score REASONING. Use for fast iteration
+      and regression alarms, never for a published number.
 - [ ] *Judge validation with a gate: hand-label ~100 explanations (timeboxed, one
       rubric revision); done only if judge-human agreement ≥ 80% on held-out
-      labels; report agreement per failure category
+      labels; report agreement per failure category. Run it as a BAKE-OFF: score
+      several judge configs (thinking on/off, model tier) against the same labels
+      and buy the cheapest that clears 80% — ~90% of judge cost is thinking tokens
 - [x] Report (`pipeline.eval_report`): per-theme/per-band scorecard, judge score
       distribution + failure categories; notes theme-tag noise floor and marks
       judge numbers provisional until the gate passes

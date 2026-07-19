@@ -34,6 +34,11 @@ from pipeline.checks import check_groundedness, check_move_match
 from pipeline.engine import Engine, EngineLine
 from pipeline.grading import grade_played_move
 from pipeline.llm import DEFAULT_MODEL, make_llm
+from pipeline.metrics import (
+    check_mate_consistency,
+    check_piece_references,
+    check_theme_coverage,
+)
 from pipeline.prompts import build_candidates_prompt, build_grade_prompt, load_template, pv_to_san
 
 PIPELINE_ROOT = Path(__file__).resolve().parents[2]
@@ -72,6 +77,25 @@ def _check_meta(meta_path: Path, meta: dict) -> None:
         meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
 
+def _explanation_metrics(
+    text: str, fen: str, pvs: list[list[str]], themes: list[str], lines
+) -> dict:
+    """Free, deterministic proxies for judge dimensions (pipeline.metrics)."""
+    coverage = check_theme_coverage(text, themes)
+    placement = check_piece_references(text, fen, pvs)
+    mate = check_mate_consistency(text, lines)
+    return {
+        "theme_scored": list(coverage.scored),
+        "theme_named": list(coverage.named),
+        "theme_rate": coverage.rate,
+        "placement_claims": list(placement.claims),
+        "placement_errors": list(placement.errors),
+        "mate_claimed": mate.claimed,
+        "mate_actual": mate.actual,
+        "mate_consistent": mate.consistent,
+    }
+
+
 def run_puzzle(rec: dict, engine, llm, template: dict, *, depth: int, multipv: int) -> dict:
     fen = rec["fen"]  # post-setup: the position the solver faces
     solution = rec["solution"]
@@ -79,8 +103,10 @@ def run_puzzle(rec: dict, engine, llm, template: dict, *, depth: int, multipv: i
     candidates = engine.analyse(fen, depth=depth, multipv=multipv)
     prompt = build_candidates_prompt(fen, candidates, template)
     explanation = llm.complete(prompt.system, prompt.user)
-    grounded = check_groundedness(explanation, fen, [list(line.pv) for line in candidates])
+    pvs = [list(line.pv) for line in candidates]
+    grounded = check_groundedness(explanation, fen, pvs)
     move_match = check_move_match(engine, fen, candidates[0], solution[0], depth=depth)
+    metrics = _explanation_metrics(explanation, fen, pvs, rec["themes"], candidates)
     # The engine-lines text as shown to the LLM — stored so the judge pass
     # needs no chess logic of its own.
     candidates_text = "\n".join(
@@ -104,6 +130,7 @@ def run_puzzle(rec: dict, engine, llm, template: dict, *, depth: int, multipv: i
             "explanation": explanation,
             "grounded": grounded.grounded,
             "ground_violations": list(grounded.violations),
+            "metrics": metrics,
             "move_match": {
                 "matched": move_match.matched,
                 "exact": move_match.exact,
@@ -143,7 +170,9 @@ def run_puzzle(rec: dict, engine, llm, template: dict, *, depth: int, multipv: i
             template,
         )
         gexplanation = llm.complete(gprompt.system, gprompt.user)
-        ggrounded = check_groundedness(gexplanation, csv_fen, [list(played.pv), list(best.pv)])
+        gpvs = [list(played.pv), list(best.pv)]
+        ggrounded = check_groundedness(gexplanation, csv_fen, gpvs)
+        gmetrics = _explanation_metrics(gexplanation, csv_fen, gpvs, rec["themes"], [played, best])
         grade |= {
             "explained": True,
             "played_line": _line_dict(played),
@@ -160,6 +189,7 @@ def run_puzzle(rec: dict, engine, llm, template: dict, *, depth: int, multipv: i
             "explanation": gexplanation,
             "grounded": ggrounded.grounded,
             "ground_violations": list(ggrounded.violations),
+            "metrics": gmetrics,
         }
     result["grade"] = grade
     return result

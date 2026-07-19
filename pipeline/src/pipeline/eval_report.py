@@ -98,6 +98,51 @@ def report(run_path: Path) -> str:
         lines.append(f"- Grade-arm groundedness: {_pct(g_grounded, len(graded))}")
     lines.append("")
 
+    # Deterministic proxies (free — run on every sweep, no API spend).
+    with_metrics = [r for r in records if r["candidates"].get("metrics")]
+    if with_metrics:
+        lines.append("## Deterministic quality proxies (no LLM, free)")
+        lines.append("")
+        applicable = [
+            r for r in with_metrics if r["candidates"]["metrics"]["theme_rate"] is not None
+        ]
+        if applicable:
+            rates = [r["candidates"]["metrics"]["theme_rate"] for r in applicable]
+            lines.append(
+                f"- Theme vocabulary named: {100 * sum(rates) / len(rates):.1f}% "
+                f"of tagged tactical themes (n={len(applicable)} puzzles with "
+                "a scorable tag)"
+            )
+        clean = sum(1 for r in with_metrics if not r["candidates"]["metrics"]["placement_errors"])
+        lines.append(
+            f"- Piece placements all real: {_pct(clean, len(with_metrics))} "
+            "(catches 'the rook on a8' when no rook is ever on a8)"
+        )
+        mate_ok = sum(1 for r in with_metrics if r["candidates"]["metrics"]["mate_consistent"])
+        invented = sum(
+            1
+            for r in with_metrics
+            if r["candidates"]["metrics"]["mate_claimed"]
+            and not r["candidates"]["metrics"]["mate_actual"]
+        )
+        missed = sum(
+            1
+            for r in with_metrics
+            if r["candidates"]["metrics"]["mate_actual"]
+            and not r["candidates"]["metrics"]["mate_claimed"]
+        )
+        lines.append(
+            f"- Mate claims consistent with the engine: {_pct(mate_ok, len(with_metrics))} "
+            f"({invented} invented, {missed} missed a forced mate)"
+        )
+        lines.append("")
+        lines.append(
+            "_Proxies, not the metric: theme vocabulary is recall-only and "
+            "gameable (naming 'fork' is necessary, not sufficient), and none "
+            "of these score REASONING — that is what the judge measures._"
+        )
+        lines.append("")
+
     # Judge (the real signal).
     lines.append("## Explanation correctness (LLM-judge)")
     lines.append("")
@@ -136,13 +181,19 @@ def report(run_path: Path) -> str:
                 by_theme[t].append(r)
     lines.append("## Per-theme (candidates arm)")
     lines.append("")
-    lines.append("| theme | n | move-match | grounded | judged | mean score | score 2 |")
-    lines.append("|---|---|---|---|---|---|---|")
+    lines.append("| theme | n | move-match | grounded | named | judged | mean score | score 2 |")
+    lines.append("|---|---|---|---|---|---|---|---|")
     for theme in sorted(by_theme, key=lambda t: -len(by_theme[t])):
         rs = by_theme[theme]
         tn = len(rs)
         mm = sum(1 for r in rs if r["candidates"]["move_match"]["matched"])
         gr = sum(1 for r in rs if r["candidates"]["grounded"])
+        # Free proxy: did the prose name THIS theme's vocabulary?
+        named_rs = [
+            r for r in rs if theme in (r["candidates"].get("metrics") or {}).get("theme_scored", [])
+        ]
+        named = sum(1 for r in named_rs if theme in r["candidates"]["metrics"]["theme_named"])
+        named_cell = _pct(named, len(named_rs)) if named_rs else "—"
         tscores = [
             scores[(r["puzzle_id"], "candidates")]["score"]
             for r in rs
@@ -150,8 +201,8 @@ def report(run_path: Path) -> str:
         ]
         two = sum(1 for s in tscores if s == 2)
         lines.append(
-            f"| {theme} | {tn} | {_pct(mm, tn)} | {_pct(gr, tn)} | {len(tscores)} | "
-            f"{_mean(tscores)} | {_pct(two, len(tscores))} |"
+            f"| {theme} | {tn} | {_pct(mm, tn)} | {_pct(gr, tn)} | {named_cell} | "
+            f"{len(tscores)} | {_mean(tscores)} | {_pct(two, len(tscores))} |"
         )
     lines.append("")
 
