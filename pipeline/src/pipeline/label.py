@@ -22,7 +22,9 @@ Output: <run>.labels.jsonl, consumed by pipeline.judge_gate.
 
 import argparse
 import json
+import random
 import sys
+from collections import Counter
 from pathlib import Path
 
 import chess
@@ -168,6 +170,7 @@ def main(argv: list[str] | None = None) -> int:
         "the 80%% gate bar so it cannot decide it. Precision is driven by the "
         "count of MINORITY labels (0s and 1s) — if most scores are 2s, more.",
     )
+    parser.add_argument("--seed", type=int, default=42, help="seed for the item shuffle")
     args = parser.parse_args(argv)
 
     run_path = Path(args.run)
@@ -178,14 +181,23 @@ def main(argv: list[str] | None = None) -> int:
         for raw in f:
             if raw.strip():
                 jobs.extend(_jobs_from_record(json.loads(raw)))
+    # Seeded shuffle, for one specific reason: a puzzle contributes TWO
+    # items (candidates + grade) and they sit adjacent in file order (135
+    # of 284 adjacent pairs, measured). Grading the same position twice in
+    # a row anchors the second label to the first, which inflates
+    # agreement on correlated items. Seeded so the order is reproducible
+    # and resume stays stable.
+    random.Random(args.seed).shuffle(jobs)
 
     done: set[tuple[str, str]] = set()
+    scores: Counter[int] = Counter()
     if labels_path.exists():
         with labels_path.open(encoding="utf-8") as f:
             for raw in f:
                 if raw.strip():
                     obj = json.loads(raw)
                     done.add((obj["puzzle_id"], obj["arm"]))
+                    scores[obj["score"]] += 1
 
     todo = [j for j in jobs if (j["puzzle_id"], j["arm"]) not in done]
     remaining = max(0, args.target - len(done))
@@ -208,9 +220,26 @@ def main(argv: list[str] | None = None) -> int:
                 out.write(json.dumps(row, ensure_ascii=False) + "\n")
                 out.flush()
                 written += 1
+                scores[row["score"]] += 1
     except SystemExit:
         pass
-    print(f"\nSaved {written} label(s) to {labels_path}  ({len(done) + written} total)")
+    total = len(done) + written
+    print(f"\nSaved {written} label(s) to {labels_path}  ({total} total)")
+    if total:
+        dist = "  ".join(f"{s}: {scores[s]}" for s in (0, 1, 2))
+        minority = scores[0] + scores[1]
+        print(f"Score distribution — {dist}")
+        # Gate precision is bounded by the MINORITY count, not the total,
+        # so surface it while there is still time to react rather than
+        # discovering it after the labeling session is over.
+        print(
+            f"Minority (0s and 1s): {minority}"
+            + (
+                "  — thin; the per-category numbers will be weak. Tell Claude before labeling more."
+                if minority < 30
+                else "  — enough spread to estimate failure categories."
+            )
+        )
     return 0
 
 

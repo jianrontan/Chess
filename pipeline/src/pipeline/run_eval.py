@@ -101,8 +101,14 @@ def subsample(records: list[dict], size: int, *, seed: int = 42) -> list[dict]:
     """
     if size >= len(records):
         return records
-    rng = random.Random(seed)
-    return sorted(rng.sample(records, size), key=lambda r: r["puzzle_id"])
+    # Shuffle-then-prefix, NOT rng.sample: prefixes are NESTED, so raising
+    # --sample-size later grows the same sweep instead of drawing a
+    # different set. rng.sample(k=350) shares no structure with
+    # rng.sample(k=150), which would silently turn a resumed run into a
+    # union of two unrelated draws.
+    shuffled = list(records)
+    random.Random(seed).shuffle(shuffled)
+    return sorted(shuffled[:size], key=lambda r: r["puzzle_id"])
 
 
 def _explanation_metrics(

@@ -225,6 +225,33 @@ def report(results: list[ConfigResult], n_labels: int, holdout: float) -> str:
         )
     out.append("")
 
+    # Derived binary views. The 0/1/2 scale conflates two questions, and
+    # disagreeing about SEVERITY is far less alarming than disagreeing about
+    # CORRECTNESS: a judge that always separates sound explanations from
+    # broken ones, but argues about whether a flaw rates 1 or 2, is still
+    # fit for the RAG comparison. Both views come free from the same
+    # labels — no extra human effort.
+    out.append("## Binary views (the ordinal scale hides which disagreement it is)")
+    out.append("")
+    out.append("| config | idea right? (score>0) | flawless? (score==2) |")
+    out.append("|---|---|---|")
+    for r in sorted(results, key=lambda x: x.cost_per_judgment()):
+        pairs = r.gate_pairs()
+        idea = [((a > 0), (b > 0)) for a, b in pairs]
+        flawless = [((a == 2), (b == 2)) for a, b in pairs]
+        idea_pct = sum(1 for a, b in idea if a == b) / len(idea) if idea else 0
+        flaw_pct = sum(1 for a, b in flawless if a == b) / len(flawless) if flawless else 0
+        out.append(f"| {r.name} | {idea_pct:.0%} | {flaw_pct:.0%} |")
+    out.append("")
+    out.append(
+        "_If ordinal agreement is mediocre but 'idea right?' is high, the judge "
+        "reliably separates correct explanations from wrong ones and only argues "
+        "about severity — usable for the arm-to-arm comparison, which is the "
+        "headline. If 'idea right?' is also low, the judge is not tracking "
+        "correctness and no amount of rubric tuning fixes that._"
+    )
+    out.append("")
+
     out.append("## Per-category agreement (where each judge is weak)")
     out.append("")
     cats = sorted({c for r in results for c in r.by_category})
