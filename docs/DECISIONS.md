@@ -271,3 +271,36 @@ multipv, model, prompt version); resuming with different settings refuses;
 output is append-only JSONL flushed per record (kill-proof). Judge numbers
 stay "provisional" in the report until the validation gate (≥80% agreement
 with ~100 hand labels) passes — that gate is the next Phase 3 item.
+
+## 2026-07-19 — First real sweep (150 puzzles): Haiku misreads the FEN
+
+The eval found a genuine, measurable quality bug on its first real run —
+which is the entire justification for building it.
+
+**Plumbing is healthy:** move-match 100% (99.3% exact; eval-equivalence
+earned its keep once), groundedness 98.7%, mate claims 98.7% consistent.
+
+**The finding: ~6.7% of explanations state a false piece placement.**
+Verified by hand against the boards, not taken on trust: "Black's queen on
+h3" when the queen is on g3; "rooks on c2 and d2" when c2 holds a pawn;
+"a knight on d4" when d4 holds a pawn and the knights are on f6/c4.
+
+**Why it happens:** the prompt hands the model a raw FEN string and Haiku
+misparses it. Note the shape of the failure — the model obeys the grounding
+rule for MOVES (it only cites lines it was given, 98.7%) but nothing
+constrains its DESCRIPTION of the board, and that is where it invents.
+Grounding the moves was necessary and insufficient.
+
+**Implied fix (not yet applied):** serialize an explicit piece list
+("White: Kg1 Qd1 Rc2 ...") into the prompt instead of relying on the model
+to parse a FEN. That is Phase 4 feature extraction arriving early. Deferred
+deliberately: changing the prompt invalidates this sweep, and the judge is
+not validated yet, so there is no trustworthy before/after to measure the
+fix against. Order: validate the judge, then fix, then measure the delta.
+
+**Also corrected here:** the engine is not the bottleneck (0.42s/puzzle at
+depth 14; the full 1172 sample analyses in ~8 min), so the homelab is not
+needed for engine work — the sweep is LLM-latency-bound and now runs a
+worker pool. And the grade-arm filter is NOT inert as the tiny smoke runs
+suggested: it fires on 135/150 (90%), so 15 setup moves genuinely were not
+mistakes.

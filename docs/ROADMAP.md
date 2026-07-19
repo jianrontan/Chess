@@ -145,17 +145,27 @@ The differentiator. Build it before RAG so RAG has a scoreboard on arrival.
       judge in BOTH directions (a correct explanation that never says "back rank";
       vocabulary is gameable), and none score REASONING. Use for fast iteration
       and regression alarms, never for a published number.
-- [ ] *Judge validation with a gate: hand-label ~100 explanations (timeboxed, one
-      rubric revision); done only if judge-human agreement ≥ 80% on held-out
-      labels; report agreement per failure category. Run it as a BAKE-OFF: score
-      several judge configs (thinking on/off, model tier) against the same labels
-      and buy the cheapest that clears 80% — ~90% of judge cost is thinking tokens
+- [x] Tooling for the gate: `pipeline.label` (resumable hand-labeling; hides the
+      judge's verdict so the human isn't anchored) and `pipeline.judge_gate`
+      (scores candidate configs on a held-out split, reports Cohen's kappa
+      beside raw agreement, recommends the CHEAPEST config clearing 80%,
+      refuses to recommend when none does). 150-puzzle gate sweep generated:
+      `data/eval_runs/gate.jsonl`, 285 labelable items.
+- [ ] **AWAITING HUMAN**: hand-label ~100 items (`uv run python -m pipeline.label
+      --run data/eval_runs/gate.jsonl`), then run `pipeline.judge_gate`. Nothing
+      downstream can be reported as final until this passes.
+- [ ] Prompt v2: serialize an explicit piece list instead of a raw FEN — the
+      first sweep found ~6.7% of explanations state a false piece placement
+      (DECISIONS.md 2026-07-19). Sequenced AFTER the gate so the fix can be
+      measured against a trustworthy baseline.
 - [x] Report (`pipeline.eval_report`): per-theme/per-band scorecard, judge score
       distribution + failure categories; notes theme-tag noise floor and marks
       judge numbers provisional until the gate passes
-- [ ] Use Batch API + prompt caching; define sweep N and budget up front
-      (judge thinking tokens dominate: ~2.5k out/judgment ⇒ budget the judge
-      pass before the full 1172-puzzle sweep)
+- [ ] Batch API (50% off) for the full sweep. Prompt caching evaluated and
+      RULED OUT: the judge system prompt is 614 tokens, under the cacheable
+      minimum, so a marker would silently no-op. Budget is no longer a
+      constraint — `--effort low` cut judge cost 4.7x, putting the full
+      1172-puzzle sweep at roughly $18 all in ($11 judge + $6 synthesis).
 - Done when: `/run-eval` produces a per-theme scorecard for the deployed prompt,
   and the judge has passed its agreement gate.
 
