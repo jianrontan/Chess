@@ -124,18 +124,28 @@ The differentiator. Build it before RAG so RAG has a scoreboard on arrival.
       rating band, per-cell reservoir, quality filters, seeded/deterministic);
       `python -m pipeline.sample_puzzles` writes a validated JSONL sample.
       Remaining: run it against the full ~6M-row dump (homelab download).
-- [ ] Runner: apply the setup move first (CSV FEN is BEFORE the opponent's move),
-      then run the serve pipeline per puzzle (native Stockfish, not WASM);
-      record prompt version + model ID + engine depth/movetime in every sweep
-- [ ] *Automatic checks: legality; move-match scored as "solution move OR
-      eval-equivalent move" (engine may pick a different equally-winning move)
-- [ ] *LLM-judge from a DIFFERENT model family than the synthesizer (0/1/2 rubric)
+- [x] Runner (`pipeline.run_eval`): setup move applied first, native SF 18 at
+      fixed depth/MultiPV, prompt built from prompts/explain.v1.json with a
+      Python port of the Worker's serialization (golden-pinned); meta sidecar
+      records engine id + depth + multipv + model + prompt version; append-only
+      resume-safe JSONL. TWO arms: candidates + grade (the setup move graded
+      chess.com-style via the ported win% formula; arm runs only when it grades
+      inaccuracy-or-worse — see DECISIONS.md 2026-07-19)
+- [x] *Automatic checks (`pipeline.checks`): groundedness (every unambiguous SAN
+      in prose must come from the given lines — the hallucinated-move alarm);
+      move-match as "solution move OR eval-equivalent (≤3 win% at same depth)"
+- [x] *LLM-judge (`pipeline.judge_eval`, prompts/judge.v1.json): Sonnet 5 judges
+      Haiku output (0/1/2 rubric + failure category, JSON-only, errors recorded);
+      needs max_tokens 8000 — Sonnet 5 thinks ~2.5k tokens before the verdict
 - [ ] *Judge validation with a gate: hand-label ~100 explanations (timeboxed, one
       rubric revision); done only if judge-human agreement ≥ 80% on held-out
       labels; report agreement per failure category
-- [ ] Report: per-theme accuracy + failure categories (wrong theme / right theme
-      wrong reasoning / hallucinated line); theme tags are noisy — note the floor
+- [x] Report (`pipeline.eval_report`): per-theme/per-band scorecard, judge score
+      distribution + failure categories; notes theme-tag noise floor and marks
+      judge numbers provisional until the gate passes
 - [ ] Use Batch API + prompt caching; define sweep N and budget up front
+      (judge thinking tokens dominate: ~2.5k out/judgment ⇒ budget the judge
+      pass before the full 1172-puzzle sweep)
 - Done when: `/run-eval` produces a per-theme scorecard for the deployed prompt,
   and the judge has passed its agreement gate.
 

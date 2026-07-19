@@ -235,3 +235,39 @@ otherwise and the unit test caught it. The boundary tests now encode 9Q legal
 Unreachable-but-material-legal positions (pawn structures needing impossible
 capture counts, unreachable castling states, retrograde arguments) are
 deliberately allowed — same stance as chess.com/lichess editors.
+
+## 2026-07-19 — Eval harness v1 (Phase 3): runner, checks, judge
+
+**Two arms per puzzle**, exercising both prod prompt templates from the one
+versioned file (`prompts/explain.v1.json`):
+
+1. **candidates** — the post-setup position through the serve pipeline
+   (native SF 18, fixed depth, MultiPV) → "what should I play" prompt.
+2. **grade** — the SETUP MOVE grade-checked exactly like prod Mode 2
+   (Lichess win% formula + thresholds, ported to `pipeline/grading.py` with
+   parity tests). The arm only runs when the setup move grades
+   inaccuracy-or-worse: Lichess mines puzzles from real blunders, so this is
+   a free labeled mistake set (solution = the verified refutation), but not
+   EVERY setup move is a mistake — the filter keeps the label honest.
+
+**Deterministic checks** (`checks.py`): groundedness = every unambiguous SAN
+token in the prose must come from the lines the LLM was shown (bare pawn
+squares like "e5" count only when written "12. e4" — otherwise "the e5 pawn"
+would false-positive); move-match = engine top move vs solution with
+eval-equivalence fallback (≤3 win% apart at the same depth).
+
+**Judge** (`prompts/judge.v1.json`, versioned like the explain prompt):
+Sonnet 5 grades Haiku output (never self-grading), 0/1/2 rubric +
+category (ok / wrong_theme / wrong_mechanism / hallucinated_line), JSON
+only, parse failures recorded as errors, never silently scored. Two smoke
+lessons baked in: (a) Sonnet 5 thinks ~2.5k tokens before answering — a
+512/2500 max_tokens cap silently truncates replies (now 8000; thinking is
+the dominant sweep cost, mitigate via Batch API); (b) the judge must see
+EVERYTHING the explainer saw — the win% delta was missing from the judge's
+grade-arm input and a correctly-quoted number got flagged as hallucinated.
+
+**Reproducibility:** every run writes a meta sidecar (engine id, depth,
+multipv, model, prompt version); resuming with different settings refuses;
+output is append-only JSONL flushed per record (kill-proof). Judge numbers
+stay "provisional" in the report until the validation gate (≥80% agreement
+with ~100 hand labels) passes — that gate is the next Phase 3 item.
