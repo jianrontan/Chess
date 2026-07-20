@@ -151,9 +151,13 @@ The differentiator. Build it before RAG so RAG has a scoreboard on arrival.
       beside raw agreement, recommends the CHEAPEST config clearing 80%,
       refuses to recommend when none does). 150-puzzle gate sweep generated:
       `data/eval_runs/gate.jsonl`, 285 labelable items.
-- [ ] **AWAITING HUMAN**: hand-label ~100 items (`uv run python -m pipeline.label
-      --run data/eval_runs/gate.jsonl`), then run `pipeline.judge_gate`. Nothing
-      downstream can be reported as final until this passes.
+- [ ] **AWAITING HUMAN**: hand-label ~250 items, then run `pipeline.judge_gate`.
+      Nothing downstream can be reported as final until this passes.
+      Browser UI (rendered board, keyboard-driven, resumable):
+      `uv run python -m pipeline.label_web --run data/eval_runs/gate-v2.jsonl`
+      Terminal equivalent: `pipeline.label` — same order, same labels file.
+      250 is sized so a marginal (82%-accurate) judge still clears the gate;
+      150 is the minimum, and precision depends on the count of 0/1 labels.
 - [x] Prompt v2 (`prompts/explain.v2.json`): explicit piece list instead of a
       raw FEN, plus a system rule that placements come from the list only.
       Fixes the 8.1% false-piece-placement rate the first sweeps measured
