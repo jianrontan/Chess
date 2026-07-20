@@ -75,6 +75,11 @@ class State:
         random.Random(seed).shuffle(jobs)
         self.jobs = jobs
         self.done: set[tuple[str, str]] = set()
+        # Skips are session-only and never written to the labels file: an
+        # item you could not judge is absent evidence, not a score, and
+        # writing it would corrupt the gate. But it must be remembered for
+        # THIS session or next_job hands back the same item forever.
+        self.skipped: set[tuple[str, str]] = set()
         self.scores: dict[int, int] = {0: 0, 1: 0, 2: 0}
         if self.labels_path.exists():
             with self.labels_path.open(encoding="utf-8") as f:
@@ -88,7 +93,8 @@ class State:
         if len(self.done) >= self.target:
             return None
         for job in self.jobs:
-            if (job["puzzle_id"], job["arm"]) not in self.done:
+            key = (job["puzzle_id"], job["arm"])
+            if key not in self.done and key not in self.skipped:
                 return job
         return None
 
@@ -165,11 +171,15 @@ def make_handler(state: State):
             self.send_error(404)
 
         def do_POST(self) -> None:
-            if self.path != "/api/label":
+            if self.path not in ("/api/label", "/api/skip"):
                 self.send_error(404)
                 return
             length = int(self.headers.get("Content-Length", 0))
             row = json.loads(self.rfile.read(length))
+            if self.path == "/api/skip":
+                state.skipped.add((row["puzzle_id"], row["arm"]))
+                self._json({"ok": True})
+                return
             state.save(
                 {
                     "puzzle_id": row["puzzle_id"],

@@ -86,6 +86,31 @@ def test_state_resumes_and_counts(tmp_path):
     assert reloaded.next_job()["puzzle_id"] != first["puzzle_id"]
 
 
+def test_skip_advances_and_is_never_written(tmp_path):
+    # Regression: skip originally saved nothing AND recorded nothing, so
+    # next_job handed back the same item forever — skip was a no-op that
+    # looked like it worked.
+    run = _write_run(tmp_path, n=3)
+    state = State(run, target=10, seed=42)
+    first = state.next_job()
+    state.skipped.add((first["puzzle_id"], first["arm"]))
+    assert state.next_job()["puzzle_id"] != first["puzzle_id"]
+    # A skip is absent evidence, not a score: it must not reach the file
+    # or the score counts the gate is computed from.
+    assert not state.labels_path.exists()
+    assert state.scores == {0: 0, 1: 0, 2: 0}
+
+
+def test_skips_do_not_survive_a_restart(tmp_path):
+    # Intentional: an item you could not judge today is worth another
+    # look tomorrow, and skips are deliberately not persisted.
+    run = _write_run(tmp_path, n=3)
+    state = State(run, target=10, seed=42)
+    first = state.next_job()
+    state.skipped.add((first["puzzle_id"], first["arm"]))
+    assert State(run, target=10, seed=42).next_job()["puzzle_id"] == first["puzzle_id"]
+
+
 def test_state_stops_at_target(tmp_path):
     run = _write_run(tmp_path)
     state = State(run, target=1, seed=42)
