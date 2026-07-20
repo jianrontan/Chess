@@ -19,10 +19,19 @@ export class BudgetCounter extends DurableObject {
    * the day's running total. A new day resets the counter; stale state from
    * previous days is overwritten, so storage stays a single small record.
    */
-  async consume(day: string): Promise<number> {
+  async consume(day: string, limit?: number): Promise<number> {
     const stored = await this.ctx.storage.get<{ day: string; count: number }>("budget");
     const count = stored?.day === day ? stored.count + 1 : 1;
-    await this.ctx.storage.put("budget", { day, count });
+    // Stop persisting once past the cap. Every answer from here is 429
+    // regardless of the exact total, so the write buys nothing — and
+    // skipping it means a sustained drain attempt can't spin storage
+    // writes on this one global object, while the stored number stays a
+    // believable "explanations" figure instead of climbing into five
+    // digits on /api/health. Enforcement is unchanged: reads keep
+    // returning limit+2, limit+3… which are still > limit.
+    if (limit === undefined || count <= limit + 1) {
+      await this.ctx.storage.put("budget", { day, count });
+    }
     return count;
   }
 

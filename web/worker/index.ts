@@ -145,7 +145,7 @@ async function budgetExhausted(env: Env): Promise<boolean> {
   if (limit === null) return false;
   try {
     const stub = env.BUDGET.get(env.BUDGET.idFromName("global"));
-    return (await stub.consume(utcDay())) > limit;
+    return (await stub.consume(utcDay(), limit)) > limit;
   } catch {
     return false;
   }
@@ -191,7 +191,12 @@ async function probeBudgetUsed(
     // used(), never consume(): probing must not spend the budget.
     used = await budget.get(budget.idFromName("global")).used(day);
   } catch {
-    used = null; // budget infra unreachable — report unknown, stay 200
+    // Serve the last good reading rather than a distinct failure value.
+    // A public `null` would announce in real time exactly when the counter
+    // is unreachable — which is precisely when budgetExhausted() fails
+    // open, handing an attacker a "the cap is off now" signal. Staying
+    // quiet also rides out the DO restart during a deploy.
+    used = budgetProbe?.day === day ? budgetProbe.used : null;
   }
   // Cache failures too: a struggling DO must not get a retry storm.
   budgetProbe = { at: Date.now(), day, used };
@@ -209,16 +214,36 @@ async function probeBudgetUsed(
  * monitoring endpoint that 500s on a storage hiccup just pages you about
  * the monitor instead of the service.
  */
-async function handleHealth(env: Env): Promise<Response> {
+async function handleHealth(request: Request, env: Env): Promise<Response> {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return jsonError("method not allowed", 405);
+  }
+
   const used = env.BUDGET ? await probeBudgetUsed(env.BUDGET) : null;
+  const provider = providerFromEnv(env).name;
+  const turnstile = Boolean(env.TURNSTILE_SECRET_KEY);
+  // A limit is only real if something can enforce it: without the DO
+  // binding budgetExhausted() returns false unconditionally, so reporting
+  // the configured number would advertise a cap that does not exist.
+  const limit = env.BUDGET ? dailyBudgetLimit(env) : null;
+
+  // MISCONFIGURATION, not capacity: the API key vanished (every
+  // explanation silently becomes the mock), the bot gate is unset (the
+  // fail-closed spend gate 503s everyone), or nothing is enforcing the
+  // spend cap. Each needs a human. A merely exhausted budget is NOT
+  // degraded — it is the cap working as designed, and it clears at UTC
+  // midnight; read `budget` for that.
+  const degraded = provider === "fake" || !turnstile || limit === null;
+
   return Response.json(
     {
       ok: true,
+      degraded,
       service: "chess-web",
       prompt: PROMPT_VERSION,
-      provider: providerFromEnv(env).name,
-      turnstile: Boolean(env.TURNSTILE_SECRET_KEY),
-      budget: { used, limit: dailyBudgetLimit(env) },
+      provider,
+      turnstile,
+      budget: { used, limit },
       time: new Date().toISOString(),
     },
     {
@@ -386,7 +411,7 @@ function route(request: Request, env: Env): Promise<Response> | Response {
   const url = new URL(request.url);
 
   if (url.pathname === "/api/health") {
-    return handleHealth(env);
+    return handleHealth(request, env);
   }
 
   if (url.pathname === "/api/explain") {
