@@ -1,0 +1,203 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Eval labeling</title><style>
+:root { color-scheme: light dark; --line: #8884; }
+* { box-sizing: border-box; }
+body { margin: 0; font: 15px/1.55 ui-sans-serif, system-ui, sans-serif;
+       display: flex; justify-content: center; padding: 20px; gap: 24px; }
+#wrap { display: flex; gap: 24px; max-width: 1220px; width: 100%;
+        align-items: flex-start; }
+#left { flex: 0 0 auto; position: sticky; top: 20px; }
+#right { flex: 1 1 auto; min-width: 0; }
+#board { display: grid; grid-template-columns: repeat(8, 62px);
+         grid-template-rows: repeat(8, 62px); border: 2px solid var(--line); }
+.sq { display: flex; align-items: center; justify-content: center;
+      font-size: 46px; line-height: 1; position: relative; user-select: none; }
+.lt { background: #f0d9b5; } .dk { background: #b58863; }
+.wp { color: #fff; text-shadow: 0 0 1px #000, 0 1px 0 #000, 1px 0 0 #000,
+      0 -1px 0 #000, -1px 0 0 #000; }
+.bp { color: #111; text-shadow: 0 0 1px #0006; }
+.coord { position: absolute; font-size: 10px; color: #0007; font-weight: 600; }
+.cf { bottom: 1px; right: 3px; } .cr { top: 1px; left: 3px; }
+#meta { margin-top: 10px; font-size: 13px; max-width: 500px; }
+#meta div { margin: 3px 0; }
+.k { color: #888; }
+h2 { font-size: 15px; margin: 0 0 6px; text-transform: uppercase;
+     letter-spacing: .06em; color: #888; }
+#expl { border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px;
+        white-space: pre-wrap; }
+#lines { font-family: ui-monospace, monospace; font-size: 12.5px;
+         white-space: pre-wrap; border-left: 3px solid var(--line);
+         padding-left: 10px; margin-bottom: 14px; }
+#bar { margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap;
+       align-items: center; }
+button { font: inherit; padding: 9px 15px; border-radius: 7px;
+         border: 1px solid var(--line); background: transparent;
+         color: inherit; cursor: pointer; }
+button:hover { background: #8882; }
+button b { font-family: ui-monospace, monospace; }
+#prog { margin-left: auto; color: #888; font-size: 13px; }
+#walk { margin-top: 12px; display: none; }
+#walk.on { display: block; }
+#status { font-weight: 600; margin-top: 8px; }
+#hint { color: #888; font-size: 13px; margin-top: 10px; }
+#done { display: none; text-align: center; padding: 60px 20px; }
+</style></head><body><div id="wrap">
+<div id="left"><div id="board"></div><div id="meta"></div>
+  <div id="walk"><div id="wnav"></div><div id="status"></div></div></div>
+<div id="right">
+  <h2 id="title"></h2>
+  <div id="lines"></div>
+  <h2>Explanation</h2>
+  <div id="expl"></div>
+  <div id="bar"></div>
+  <div id="hint"></div>
+</div></div>
+<div id="done"><h2>All done</h2><p id="donetext"></p></div>
+<script>
+const GLYPH = {k:"\u265A",q:"\u265B",r:"\u265C",b:"\u265D",n:"\u265E",p:"\u265F"};
+let job = null, step = 0, phase = "score", score = null;
+
+function drawBoard(fen) {
+  const rows = fen.split(" ")[0].split("/");
+  const el = document.getElementById("board");
+  el.innerHTML = "";
+  for (let r = 0; r < 8; r++) {
+    let file = 0;
+    for (const ch of rows[r]) {
+      if (/\d/.test(ch)) { for (let i = 0; i < +ch; i++) cell(el, r, file++, null); }
+      else cell(el, r, file++, ch);
+    }
+  }
+}
+function cell(el, r, f, ch) {
+  const d = document.createElement("div");
+  d.className = "sq " + ((r + f) % 2 ? "dk" : "lt");
+  if (ch) {
+    const s = document.createElement("span");
+    s.textContent = GLYPH[ch.toLowerCase()];
+    s.className = ch === ch.toUpperCase() ? "wp" : "bp";
+    d.appendChild(s);
+  }
+  if (r === 7) { const c = document.createElement("span");
+    c.className = "coord cf"; c.textContent = "abcdefgh"[f]; d.appendChild(c); }
+  if (f === 0) { const c = document.createElement("span");
+    c.className = "coord cr"; c.textContent = 8 - r; d.appendChild(c); }
+  el.appendChild(d);
+}
+
+function render() {
+  step = 0; phase = "score"; score = null;
+  document.getElementById("walk").classList.remove("on");
+  drawBoard(job.fen);
+  document.getElementById("title").textContent =
+    `[${job.index}/${job.target}] puzzle ${job.puzzle_id} — ${job.arm} arm`;
+  document.getElementById("meta").innerHTML =
+    `<div><span class="k">to move:</span> ${job.side}</div>` +
+    `<div><span class="k">themes:</span> ${job.themes.join(" ")}</div>` +
+    `<div><span class="k">${job.arm === "grade" ? "refutation" : "solution"}:` +
+    `</span> ${job.solution_san}</div>`;
+  document.getElementById("lines").textContent = job.engine_lines;
+  document.getElementById("expl").textContent = job.explanation.trim();
+  document.getElementById("prog") &&
+    (document.getElementById("prog").textContent = "");
+  buttons();
+}
+
+function buttons() {
+  const bar = document.getElementById("bar");
+  bar.innerHTML = "";
+  const add = (label, fn) => {
+    const b = document.createElement("button");
+    b.innerHTML = label; b.onclick = fn; bar.appendChild(b);
+  };
+  if (phase === "score") {
+    add("<b>2</b> sound", () => pick(2));
+    add("<b>1</b> shaky", () => pick(1));
+    add("<b>0</b> wrong idea", () => pick(0));
+    add("<b>b</b> walk line", walk);
+    add("<b>s</b> skip", () => send(null));
+    document.getElementById("hint").textContent =
+      "2 = right idea and sound reasoning \u00b7 " +
+      "1 = right idea, shaky reasoning or an invented detail \u00b7 " +
+      "0 = wrong idea \u00b7 s = unsure (costs nothing)";
+  } else {
+    add("<b>t</b> wrong theme", () => send(score, "wrong_theme"));
+    add("<b>m</b> wrong mechanism", () => send(score, "wrong_mechanism"));
+    add("<b>h</b> hallucinated line", () => send(score, "hallucinated_line"));
+    document.getElementById("hint").textContent = "what went wrong?";
+  }
+  const p = document.createElement("div");
+  // job.done is the API's end-of-run boolean; the count is done_count.
+  p.id = "prog";
+  p.textContent = `${job.done_count} labeled · ${job.remaining} to go`;
+  bar.appendChild(p);
+}
+
+function pick(s) {
+  if (s === 2) { send(2, "ok"); return; }
+  score = s; phase = "cat"; buttons();
+}
+
+function walk() {
+  const w = document.getElementById("walk");
+  w.classList.add("on");
+  showStep(0);
+}
+function showStep(i) {
+  step = Math.max(0, Math.min(i, job.steps.length - 1));
+  const s = job.steps[step];
+  drawBoard(s.fen);
+  document.getElementById("wnav").innerHTML =
+    `<button onclick="showStep(${step - 1})">←</button> ` +
+    `<b>${s.san || "start"}</b> ` +
+    `<button onclick="showStep(${step + 1})">→</button> ` +
+    `<button onclick="reset()">reset</button> &nbsp;<span class="k">${step}/${job.steps.length - 1}</span>`;
+  document.getElementById("status").textContent =
+    step === job.steps.length - 1 ? job.terminal : "";
+}
+function reset() {
+  document.getElementById("walk").classList.remove("on");
+  drawBoard(job.fen);
+}
+
+async function send(sc, cat) {
+  if (sc !== null) {
+    await fetch("/api/label", { method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ puzzle_id: job.puzzle_id, arm: job.arm, score: sc,
+                             category: cat || "ok", note: "" }) });
+  }
+  load();
+}
+
+async function load() {
+  const r = await fetch("/api/next");
+  const d = await r.json();
+  if (d.done) {
+    document.getElementById("wrap").style.display = "none";
+    document.getElementById("done").style.display = "block";
+    document.getElementById("donetext").textContent =
+      `${d.count} labels saved to ${d.path}. Score distribution — 0: ${d.dist[0]}, 1: ${d.dist[1]}, 2: ${d.dist[2]}.` +
+      (d.minority < 30 ? " Minority (0s and 1s) is thin — mention this to Claude before running the gate." : "");
+    return;
+  }
+  job = d; render();
+}
+
+document.addEventListener("keydown", (e) => {
+  if (!job) return;
+  const k = e.key.toLowerCase();
+  if (phase === "score") {
+    if (k === "2" || k === "1" || k === "0") pick(+k);
+    else if (k === "s") send(null);
+    else if (k === "b") walk();
+    else if (k === "arrowleft") showStep(step - 1);
+    else if (k === "arrowright") showStep(step + 1);
+  } else {
+    if (k === "t") send(score, "wrong_theme");
+    else if (k === "m") send(score, "wrong_mechanism");
+    else if (k === "h") send(score, "hallucinated_line");
+    else if (k === "escape") { phase = "score"; buttons(); }
+  }
+});
+load();
+</script></body></html>
