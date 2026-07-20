@@ -141,15 +141,61 @@ async function handleVerify(request: Request, env: Env): Promise<Response> {
  */
 async function budgetExhausted(env: Env): Promise<boolean> {
   if (!env.BUDGET) return false;
-  const limit = Number(env.DAILY_BUDGET ?? DEFAULT_DAILY_BUDGET);
-  if (!Number.isFinite(limit) || limit <= 0) return false;
+  const limit = dailyBudgetLimit(env);
+  if (limit === null) return false;
   try {
-    const day = new Date().toISOString().slice(0, 10);
     const stub = env.BUDGET.get(env.BUDGET.idFromName("global"));
-    return (await stub.consume(day)) > limit;
+    return (await stub.consume(utcDay())) > limit;
   } catch {
     return false;
   }
+}
+
+/** UTC date key ("YYYY-MM-DD") the budget counter is bucketed by. */
+function utcDay(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/** Configured explanations/day, or null when the cap is off or malformed. */
+function dailyBudgetLimit(env: Env): number | null {
+  const limit = Number(env.DAILY_BUDGET ?? DEFAULT_DAILY_BUDGET);
+  return Number.isFinite(limit) && limit > 0 ? limit : null;
+}
+
+/**
+ * Liveness + configuration probe: public, unauthenticated, no LLM spend,
+ * and deliberately outside spendGate so external monitoring can reach it.
+ *
+ * It reports the states that silently DEGRADE the live path without taking
+ * the site down — `provider` flips to "fake" if the API key vanishes,
+ * `turnstile` false means the bot gate isn't configured, and `budget`
+ * shows how close the day is to its cap. Every lookup fails SOFT: a
+ * monitoring endpoint that 500s on a storage hiccup just pages you about
+ * the monitor instead of the service.
+ */
+async function handleHealth(env: Env): Promise<Response> {
+  let used: number | null = null;
+  if (env.BUDGET) {
+    try {
+      const stub = env.BUDGET.get(env.BUDGET.idFromName("global"));
+      // used(), never consume(): probing must not spend the budget.
+      used = await stub.used(utcDay());
+    } catch {
+      used = null; // budget infra unreachable — report unknown, stay 200
+    }
+  }
+  return Response.json(
+    {
+      ok: true,
+      service: "chess-web",
+      prompt: PROMPT_VERSION,
+      provider: providerFromEnv(env).name,
+      turnstile: Boolean(env.TURNSTILE_SECRET_KEY),
+      budget: { used, limit: dailyBudgetLimit(env) },
+      time: new Date().toISOString(),
+    },
+    { headers: { "x-content-type-options": "nosniff" } },
+  );
 }
 
 function jsonError(message: string, status: number): Response {
@@ -306,16 +352,7 @@ function route(request: Request, env: Env): Promise<Response> | Response {
   const url = new URL(request.url);
 
   if (url.pathname === "/api/health") {
-    return Response.json(
-      {
-        ok: true,
-        service: "chess-web",
-        prompt: PROMPT_VERSION,
-        provider: providerFromEnv(env).name,
-        time: new Date().toISOString(),
-      },
-      { headers: { "x-content-type-options": "nosniff" } },
-    );
+    return handleHealth(env);
   }
 
   if (url.pathname === "/api/explain") {

@@ -25,4 +25,14 @@ export class BudgetCounter extends DurableObject {
     await this.ctx.storage.put("budget", { day, count });
     return count;
   }
+
+  /**
+   * Read `day`'s total WITHOUT counting against it — for /api/health.
+   * Monitoring must never consume budget: a 5-minute probe calling
+   * consume() would burn ~288 explanations/day all by itself.
+   */
+  async used(day: string): Promise<number> {
+    const stored = await this.ctx.storage.get<{ day: string; count: number }>("budget");
+    return stored?.day === day ? stored.count : 0;
+  }
 }
