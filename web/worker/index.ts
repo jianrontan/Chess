@@ -163,6 +163,42 @@ function dailyBudgetLimit(env: Env): number | null {
 }
 
 /**
+ * How long a health probe may reuse the last budget reading.
+ *
+ * /api/health is public and ungated, so WITHOUT this every probe — and
+ * every request of a flood — would queue an RPC against the ONE global
+ * BudgetCounter that the paid path also needs. That matters because
+ * budgetExhausted() fails OPEN: stall the counter and the daily cap stops
+ * being enforced. Memoizing per isolate bounds health's load on it to one
+ * read per window no matter the request rate. Well under a monitor's
+ * 5-minute interval, so probes still see fresh numbers.
+ */
+const BUDGET_PROBE_TTL_MS = 10_000;
+
+let budgetProbe: { at: number; day: string; used: number | null } | null = null;
+
+async function probeBudgetUsed(
+  budget: DurableObjectNamespace<BudgetCounter>,
+): Promise<number | null> {
+  const day = utcDay();
+  const now = Date.now();
+  // Keyed by day too, so a UTC rollover can't serve yesterday's total.
+  if (budgetProbe && budgetProbe.day === day && now - budgetProbe.at < BUDGET_PROBE_TTL_MS) {
+    return budgetProbe.used;
+  }
+  let used: number | null = null;
+  try {
+    // used(), never consume(): probing must not spend the budget.
+    used = await budget.get(budget.idFromName("global")).used(day);
+  } catch {
+    used = null; // budget infra unreachable — report unknown, stay 200
+  }
+  // Cache failures too: a struggling DO must not get a retry storm.
+  budgetProbe = { at: Date.now(), day, used };
+  return used;
+}
+
+/**
  * Liveness + configuration probe: public, unauthenticated, no LLM spend,
  * and deliberately outside spendGate so external monitoring can reach it.
  *
@@ -174,16 +210,7 @@ function dailyBudgetLimit(env: Env): number | null {
  * the monitor instead of the service.
  */
 async function handleHealth(env: Env): Promise<Response> {
-  let used: number | null = null;
-  if (env.BUDGET) {
-    try {
-      const stub = env.BUDGET.get(env.BUDGET.idFromName("global"));
-      // used(), never consume(): probing must not spend the budget.
-      used = await stub.used(utcDay());
-    } catch {
-      used = null; // budget infra unreachable — report unknown, stay 200
-    }
-  }
+  const used = env.BUDGET ? await probeBudgetUsed(env.BUDGET) : null;
   return Response.json(
     {
       ok: true,
@@ -194,7 +221,14 @@ async function handleHealth(env: Env): Promise<Response> {
       budget: { used, limit: dailyBudgetLimit(env) },
       time: new Date().toISOString(),
     },
-    { headers: { "x-content-type-options": "nosniff" } },
+    {
+      headers: {
+        "x-content-type-options": "nosniff",
+        // A cached health response would report "up" through an outage —
+        // exactly what the monitor exists to catch.
+        "cache-control": "no-store",
+      },
+    },
   );
 }
 
